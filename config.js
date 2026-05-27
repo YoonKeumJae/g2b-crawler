@@ -7,7 +7,7 @@ function getDateRange() {
 }
 
 module.exports = {
-  keywords: ['ees'],
+  keywords: ['ees', '오피스365', 'ms오피스'],
   headless: true,
   outputPath: 'output/results.xlsx',
   getDateRange,
