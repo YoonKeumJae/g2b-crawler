@@ -56,24 +56,44 @@ async function extractFields(page) {
  */
 async function extractDetail(page, rowIndex) {
   const selector = `#mf_wfm_container_grdTotalSrch_${rowIndex}_untyTitleTd`;
+  const MAX_RETRIES = 2;
 
-  console.log(`[detail] Clicking row ${rowIndex}...`);
-  const responsePromise = page.waitForResponse(
-    r => r.url().includes('selectItemAnncMngV.do') && r.status() === 200,
-    { timeout: 30000 }
-  );
-  await page.click(selector, { force: true });
-  await responsePromise;
-  await page.waitForTimeout(2000);
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      console.log(`[detail] ↺ Retry ${attempt} for row ${rowIndex}...`);
+      // Ensure we're back on results page before retrying
+      try { await page.goBack({ waitUntil: 'domcontentloaded', timeout: 15000 }); } catch (_) {}
+      try { await page.waitForSelector('#mf_wfm_container_testTable', { timeout: 15000 }); } catch (_) {}
+      await page.waitForTimeout(2000);
+    }
 
-  const fields = await extractFields(page);
-  console.log(`[detail] ✓ Extracted ${Object.keys(fields).length} fields`);
+    try {
+      console.log(`[detail] Clicking row ${rowIndex}...`);
+      const responsePromise = page.waitForResponse(
+        r => r.url().includes('selectItemAnncMngV.do') && r.status() === 200,
+        { timeout: 30000 }
+      );
+      await page.click(selector, { force: true });
+      await responsePromise;
+      await page.waitForTimeout(2000);
 
-  await page.goBack({ waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('#mf_wfm_container_testTable', { timeout: 20000 });
-  await page.waitForTimeout(1000);
+      const fields = await extractFields(page);
+      console.log(`[detail] ✓ Extracted ${Object.keys(fields).length} fields`);
 
-  return Object.keys(fields).length > 0 ? fields : null;
+      await page.goBack({ waitUntil: 'domcontentloaded' });
+      await page.waitForSelector('#mf_wfm_container_testTable', { timeout: 20000 });
+      await page.waitForTimeout(1000);
+
+      return Object.keys(fields).length > 0 ? fields : null;
+    } catch (err) {
+      if (attempt < MAX_RETRIES) {
+        console.log(`[detail] ⚠ Attempt failed: ${err.message.slice(0, 80)}`);
+      } else {
+        console.log(`[detail] ✗ All retries exhausted for row ${rowIndex}`);
+        return null;
+      }
+    }
+  }
 }
 
 module.exports = { extractDetail };

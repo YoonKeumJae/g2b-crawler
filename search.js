@@ -58,8 +58,8 @@ async function search(page, keyword, dateRange) {
     timeout: 60000
   });
   
-  // Wait for dynamic content to load
-  await page.waitForTimeout(3000);
+  // Wait for WebSquare SPA to fully initialize (takes variable time)
+  await page.waitForSelector('input[placeholder="입찰공고"]', { timeout: 30000 });
 
   // Dismiss any notice/announcement popups (공지사항 팝업)
   await dismissPopups(page);
@@ -67,7 +67,6 @@ async function search(page, keyword, dateRange) {
   console.log(`[search] Filling search form - keyword: "${keyword}", dates: ${dateRange.from} ~ ${dateRange.to}`);
   
   // Fill in the announcement name (공고명) field
-  // Using placeholder selector as it's more stable than dynamic IDs
   await page.fill('input[placeholder="입찰공고"]', keyword);
   console.log('[search] ✓ Filled keyword field');
   

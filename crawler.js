@@ -3,11 +3,11 @@ const config = require('./config');
 const { search } = require('./search');
 const { collectCurrentPageRows, goToNextPage } = require('./paginator');
 const { extractDetail } = require('./detail');
-const { write, reset } = require('./writer');
+const { ExcelWriter } = require('./writer');
 
 (async () => {
   const dateRange = config.getDateRange();
-  console.log(`Searching: keyword="${config.keyword}", from=${dateRange.from}, to=${dateRange.to}`);
+  const keywords = config.keywords;
 
   const browser = await chromium.launch({
     headless: config.headless,
@@ -21,40 +21,54 @@ const { write, reset } = require('./writer');
   await context.addInitScript(() => {
     Object.defineProperty(navigator, 'webdriver', { get: () => false });
   });
-  const page = await context.newPage();
+
+  const writer = new ExcelWriter();
+  await writer.init(config.outputPath);
+
+  let totalSaved = 0;
 
   try {
-    await search(page, config.keyword, dateRange);
-    console.log('Search submitted. Processing results...');
+    for (const keyword of keywords) {
+      console.log(`\n=== Keyword: "${keyword}" | ${dateRange.from} ~ ${dateRange.to} ===`);
+      const page = await context.newPage();
 
-    reset();
-    let pageNum = 1;
-    let totalProcessed = 0;
-    const maxPages = 100;
+      try {
+        await search(page, keyword, dateRange);
+        console.log('Search submitted. Processing results...');
 
-    while (pageNum <= maxPages) {
-      const rows = await collectCurrentPageRows(page);
-      if (rows.length === 0) {
-        console.log(pageNum === 1 ? 'No results found. Exiting.' : 'No more results.');
-        break;
+        let pageNum = 1;
+        const maxPages = 100;
+
+        while (pageNum <= maxPages) {
+          const rows = await collectCurrentPageRows(page);
+          if (rows.length === 0) {
+            console.log(pageNum === 1 ? 'No results found.' : 'No more results.');
+            break;
+          }
+          console.log(`Page ${pageNum}: ${rows.length} results`);
+
+          for (const row of rows) {
+            totalSaved++;
+            console.log(`[${totalSaved}] ${row.bidNumber} (row ${row.rowIndex})`);
+            const record = await extractDetail(page, row.rowIndex);
+            if (record) writer.addRecord(keyword, dateRange, record);
+            else console.log(`  ⚠ Failed to extract details for row ${row.rowIndex}`);
+          }
+
+          const hasNext = await goToNextPage(page);
+          if (!hasNext) break;
+          pageNum++;
+        }
+      } finally {
+        await page.close();
       }
-      console.log(`Page ${pageNum}: ${rows.length} results`);
-
-      for (const row of rows) {
-        totalProcessed++;
-        console.log(`[${totalProcessed}] ${row.bidNumber} (row ${row.rowIndex})`);
-        const record = await extractDetail(page, row.rowIndex);
-        if (record) write(config.outputPath, record);
-        else console.log(`  ⚠ Failed to extract details for row ${row.rowIndex}`);
-      }
-
-      const hasNext = await goToNextPage(page);
-      if (!hasNext) break;
-      pageNum++;
     }
 
-    if (totalProcessed > 0) {
-      console.log(`\nDone. ${totalProcessed} records saved to ${config.outputPath}`);
+    if (totalSaved > 0) {
+      await writer.save();
+      console.log(`Total: ${totalSaved} records across ${keywords.length} keyword(s).`);
+    } else {
+      console.log('No records found.');
     }
   } catch (err) {
     console.error('Crawler error:', err.message);

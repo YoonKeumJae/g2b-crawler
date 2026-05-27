@@ -7,8 +7,8 @@ function getDateRange() {
 }
 
 module.exports = {
-  keyword: 'ees',
+  keywords: ['ees'],
   headless: true,
-  outputPath: 'output/results.csv',
+  outputPath: 'output/results.xlsx',
   getDateRange,
 };
