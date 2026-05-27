@@ -52,9 +52,13 @@ const { ExcelWriter } = require('./writer');
           for (const row of rows) {
             totalSaved++;
             console.log(`[${totalSaved}] ${row.bidNumber} (row ${row.rowIndex})`);
-            const record = await extractDetail(page, row.rowIndex);
-            if (record) writer.addRecord(keyword, dateRange, record);
-            else console.log(`  ⚠ Failed to extract details for row ${row.rowIndex}`);
+            try {
+              const record = await extractDetail(page, row.rowIndex);
+              if (record) writer.addRecord(keyword, dateRange, record);
+              else console.log(`  ⚠ Failed to extract details for row ${row.rowIndex}`);
+            } catch (rowErr) {
+              console.log(`  ⚠ Skipped row ${row.rowIndex}: ${rowErr.message.slice(0, 80)}`);
+            }
           }
 
           const hasNext = await goToNextPage(page);

@@ -61,7 +61,6 @@ async function extractDetail(page, rowIndex) {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (attempt > 0) {
       console.log(`[detail] ↺ Retry ${attempt} for row ${rowIndex}...`);
-      // Ensure we're back on results page before retrying
       try { await page.goBack({ waitUntil: 'domcontentloaded', timeout: 15000 }); } catch (_) {}
       try { await page.waitForSelector('#mf_wfm_container_testTable', { timeout: 15000 }); } catch (_) {}
       await page.waitForTimeout(2000);
@@ -69,13 +68,26 @@ async function extractDetail(page, rowIndex) {
 
     try {
       console.log(`[detail] Clicking row ${rowIndex}...`);
-      const responsePromise = page.waitForResponse(
-        r => r.url().includes('selectItemAnncMngV.do') && r.status() === 200,
-        { timeout: 30000 }
-      );
+
+      // Set up response waiter before click (race condition prevention)
+      let responsePromise;
+      try {
+        responsePromise = page.waitForResponse(
+          r => r.url().includes('selectItemAnncMngV.do') && r.status() === 200,
+          { timeout: 20000 }
+        );
+      } catch (_) {
+        responsePromise = Promise.resolve();
+      }
+
       await page.click(selector, { force: true });
-      await responsePromise;
-      await page.waitForTimeout(2000);
+
+      // Wait for response OR for detail container to appear (whichever first)
+      await Promise.race([
+        responsePromise.catch(() => {}),
+        page.waitForSelector('[id*="bidPbancWfrm_mainContents"]', { timeout: 20000 }),
+      ]);
+      await page.waitForTimeout(1500);
 
       const fields = await extractFields(page);
       console.log(`[detail] ✓ Extracted ${Object.keys(fields).length} fields`);
@@ -86,14 +98,14 @@ async function extractDetail(page, rowIndex) {
 
       return Object.keys(fields).length > 0 ? fields : null;
     } catch (err) {
-      if (attempt < MAX_RETRIES) {
-        console.log(`[detail] ⚠ Attempt failed: ${err.message.slice(0, 80)}`);
-      } else {
+      console.log(`[detail] ⚠ Attempt ${attempt} failed: ${err.message.slice(0, 80)}`);
+      if (attempt >= MAX_RETRIES) {
         console.log(`[detail] ✗ All retries exhausted for row ${rowIndex}`);
         return null;
       }
     }
   }
+  return null;
 }
 
 module.exports = { extractDetail };
