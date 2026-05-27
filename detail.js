@@ -5,37 +5,41 @@
  */
 
 /**
- * Extracts all meaningful th→td label/value pairs from the current page DOM.
- * Uses content-based filtering to remove search form dropdown noise.
+ * Extracts all meaningful th→td label/value pairs from the detail view only.
+ * Targets the bid detail container (bidPbancWfrm_mainContents) to exclude
+ * search form noise (calendar widgets, dropdowns, etc.).
  * @param {Page} page
  * @returns {Promise<Object>}
  */
 async function extractFields(page) {
   return await page.evaluate(() => {
-    function isNoise(v) {
-      if (!v || v.trim() === '') return true;
-      if (v === '달력에서 선택' || v === '원' || v === '￦' || v === '＄' || v === '$') return true;
-      if (v.includes('\t')) return true;
-      // Search form dropdowns concatenate all options, typically starting with "전체"
-      if (/^전체[가-힣]{2,}/.test(v)) return true;
-      // Date range dropdown: "~1개월3개월..."
-      if (v.startsWith('~') && v.includes('개월')) return true;
-      // Year selector dropdown: "1950년1951년..."
-      if (/\d{4}년\d{4}년/.test(v)) return true;
-      // N/A + concatenated options: "N/A일반경쟁..."
-      if (/^N\/A[가-힣]/.test(v)) return true;
-      return false;
+    // Find the detail content container - excludes the search form
+    const container =
+      document.querySelector('[id*="bidPbancWfrm_mainContents"]') ||
+      document.querySelector('[id*="bidPbancWfrm_mainWframe_pageType"]') ||
+      document.querySelector('[id*="bidPbancWfrm"]') ||
+      document.body;
+
+    function getCellValue(td) {
+      // WebSquare uses readonly input/textarea elements for field values
+      const input = td.querySelector('input[type="text"], textarea');
+      if (input) return input.value.trim();
+      const select = td.querySelector('select');
+      if (select) return select.options[select.selectedIndex]?.text.trim() || '';
+      return td.textContent.trim();
     }
 
     const result = {};
-    const rows = document.querySelectorAll('tr');
+    const rows = container.querySelectorAll('tr');
     for (const row of rows) {
       const ths = row.querySelectorAll('th');
       const tds = row.querySelectorAll('td');
       for (let i = 0; i < ths.length; i++) {
         const label = ths[i].textContent.trim();
-        const value = tds[i] ? tds[i].textContent.trim() : '';
-        if (!label || isNoise(value)) continue;
+        const td = tds[i];
+        if (!label || !td) continue;
+        const value = getCellValue(td);
+        if (!value) continue;
         result[label] = value;
       }
     }
