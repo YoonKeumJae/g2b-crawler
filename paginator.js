@@ -109,21 +109,30 @@ async function goToNextPage(frame) {
       // 1. Next button with text "다음" or ">"
       // 2. Link with onclick="fn_Page(nextPageNum)"
       // 3. Numbered page links, find current + 1
-      
-      const nextSelectors = [
-        'a[onclick*="fn_Page"]:has-text("다음")',
-        'a[onclick*="goPage"]:has-text("다음")',
+
+      // Try simple CSS selectors first (no :has-text — that's Playwright-only)
+      const cssSelectors = [
         'a.page_next:not(.disabled)',
         'a[title*="다음"]',
         'img[alt*="다음"]',
       ];
-      
-      for (const selector of nextSelectors) {
-        const nextButton = document.querySelector(selector);
-        if (nextButton && !nextButton.classList.contains('disabled')) {
-          nextButton.click();
+      for (const selector of cssSelectors) {
+        const btn = document.querySelector(selector);
+        if (btn && !btn.classList.contains('disabled')) {
+          btn.click();
           return true;
         }
+      }
+
+      // Find any <a> whose text contains "다음"
+      const allLinks = Array.from(document.querySelectorAll('a'));
+      const nextByText = allLinks.find(a =>
+        (a.textContent.trim() === '다음' || a.textContent.trim() === '>') &&
+        !a.classList.contains('disabled')
+      );
+      if (nextByText) {
+        nextByText.click();
+        return true;
       }
       
       // Try to find current page number and click next one
