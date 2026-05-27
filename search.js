@@ -112,29 +112,45 @@ async function search(page, keyword, dateRange) {
   // The G2B site shows a processing message in an iframe, then loads results
   // We need to wait for the processing to complete
   let attempts = 0;
-  const maxAttempts = 15; // 15 seconds max
-  
+  const maxAttempts = 30; // 30 seconds max
+
   while (attempts < maxAttempts) {
     const frames = page.frames();
-    
+
+    // Log all frame URLs every 5 seconds for debugging
+    if (attempts % 5 === 0) {
+      console.log(`[search] Frame URLs at attempt ${attempts}:`);
+      frames.forEach(f => console.log(`  - ${f.url()}`));
+    }
+
     // Check if any frame has loaded with results (not the processing message)
     for (const frame of frames) {
       const url = frame.url();
-      
+
       // Check if this is a results frame (contains viewBidInfoList or similar)
-      if (url && (url.includes('viewBidInfoList') || url.includes('bidInfoList'))) {
+      if (url && (
+        url.includes('viewBidInfoList') ||
+        url.includes('bidInfoList') ||
+        url.includes('BidInfoList') ||
+        url.includes('bidNtce') ||
+        url.includes('selectBidPbancList') ||
+        url.includes('ntceList') ||
+        url.includes('listPage')
+      )) {
         console.log('[search] ✓ Results page loaded:', url);
-        
-        // Wait a bit more for the results to fully render
         await page.waitForTimeout(2000);
         return;
       }
     }
-    
+
     await page.waitForTimeout(1000);
     attempts++;
   }
-  
+
+  // Print final frame state before throwing
+  console.log('[search] Timeout reached. Final frame URLs:');
+  page.frames().forEach(f => console.log(`  - ${f.url()}`));
+
   // If we get here, the iframe did not load within the timeout
   throw new Error('Search iframe did not load within timeout');
 }
