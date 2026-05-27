@@ -9,8 +9,20 @@ const { write, reset } = require('./writer');
   const dateRange = config.getDateRange();
   console.log(`Searching: keyword="${config.keyword}", from=${dateRange.from}, to=${dateRange.to}`);
 
-  const browser = await chromium.launch({ headless: config.headless });
-  const page = await browser.newPage();
+  const browser = await chromium.launch({
+    headless: config.headless,
+    args: ['--disable-blink-features=AutomationControlled'],
+  });
+  const context = await browser.newContext({
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    locale: 'ko-KR',
+    timezoneId: 'Asia/Seoul',
+  });
+  // Hide navigator.webdriver so G2B's bot detection doesn't block AJAX requests
+  await context.addInitScript(() => {
+    Object.defineProperty(navigator, 'webdriver', { get: () => false });
+  });
+  const page = await context.newPage();
 
   try {
     await search(page, config.keyword, dateRange);
@@ -25,7 +37,7 @@ const { write, reset } = require('./writer');
     }
 
     reset();
-    const detailPage = await browser.newPage();
+    const detailPage = await context.newPage();
     for (let i = 0; i < urls.length; i++) {
       console.log(`[${i + 1}/${urls.length}] ${urls[i]}`);
       const record = await extractDetail(detailPage, urls[i]);
