@@ -6,31 +6,29 @@ This is a web crawler project. Update this section as the architecture takes sha
 
 ## Build, Test & Lint
 
-<!-- Update these commands once a package manager and toolchain are chosen -->
-
 ```bash
 # Install dependencies
-# npm install  /  pip install -r requirements.txt  /  go mod tidy
+npm install
+npx playwright install chromium
+
+# Run the crawler
+node crawler.js
 
 # Run all tests
-# npm test  /  pytest  /  go test ./...
+npx jest
 
-# Run a single test
-# npm test -- --testPathPattern=<name>  /  pytest tests/test_file.py::test_name  /  go test ./... -run TestName
-
-# Lint
-# npm run lint  /  ruff check .  /  golangci-lint run
+# Run a single test file
+npx jest tests/writer.test.js
 ```
 
 ## Architecture
 
-<!-- Fill in once files exist. Key things to document here:
-  - Entry point (e.g., main.py, cmd/crawler/main.go, src/index.ts)
-  - Crawl pipeline stages (fetch → parse → store → queue)
-  - Concurrency model (goroutines, asyncio, worker threads)
-  - Storage backend (database, file system, queue)
-  - How frontier/URL queue is managed
--->
+- **crawler.js**: Main entry point; orchestrates the full crawl pipeline
+- **config.js**: Configuration module with keyword, headless flag, outputPath, and getDateRange() utility
+- **search.js**: Navigates g2b.go.kr, fills the search form with config, and submits queries
+- **paginator.js**: Collects all detail URLs across paginated result pages
+- **detail.js**: Extracts all th→td field pairs from a detail page into structured data
+- **writer.js**: Incremental CSV writer; exports write() and reset() functions
 
 ## Key Conventions
 
