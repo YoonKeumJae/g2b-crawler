@@ -106,67 +106,28 @@ async function search(page, keyword, dateRange) {
   await page.waitForSelector('.w2modal', { state: 'hidden', timeout: 10000 }).catch(() => {
     console.log('[search] (no modal to wait for)');
   });
-  
+
+  // Set up response waiter BEFORE clicking, so we don't miss it
+  // srchBidPbanc.do is the actual search endpoint that returns results data
+  const searchDonePromise = page.waitForResponse(
+    res => res.url().includes('srchBidPbanc.do') && res.status() === 200,
+    { timeout: 40000 }
+  );
+
   // Find and click the search button (검색하기)
   // There are multiple search buttons for different tabs, need the visible one
   // Use force: true to bypass any overlays
   const searchButton = page.locator('a.main-srch:has-text("검색하기"):visible').first();
-  
+
   console.log('[search] Clicking search button...');
   await searchButton.click({ force: true, timeout: 10000 });
-  
-  // Wait for the processing iframe to appear (this indicates the search is being processed)
-  console.log('[search] Waiting for search results to process...');
-  await page.waitForTimeout(2000); // let processMsg appear first
 
-  // G2B uses a processMsg iframe as a loading overlay.
-  // When the search completes, processMsg disappears and results load into the SPA
-  // (either in the main frame DOM or in a new iframe depending on page layout).
-  let attempts = 0;
-  const maxAttempts = 30;
+  console.log('[search] Waiting for srchBidPbanc.do response...');
+  await searchDonePromise;
+  console.log('[search] ✓ Search data received – waiting for render...');
 
-  while (attempts < maxAttempts) {
-    const frames = page.frames();
-
-    if (attempts % 5 === 0) {
-      console.log(`[search] Frame URLs at attempt ${attempts}:`);
-      frames.forEach(f => console.log(`  - ${f.url()}`));
-    }
-
-    const processingFrame = frames.find(f => f.url().includes('processMsg'));
-
-    // processMsg disappeared → search completed, results now in main SPA frame
-    if (!processingFrame) {
-      console.log('[search] ✓ processMsg gone – search completed');
-      await page.waitForTimeout(2000);
-      return;
-    }
-
-    // Also check for a dedicated results iframe URL
-    for (const frame of frames) {
-      const url = frame.url();
-      if (url && (
-        url.includes('viewBidInfoList') ||
-        url.includes('bidInfoList') ||
-        url.includes('BidInfoList') ||
-        url.includes('bidNtce') ||
-        url.includes('selectBidPbancList') ||
-        url.includes('ntceList') ||
-        url.includes('listPage')
-      )) {
-        console.log('[search] ✓ Results frame loaded:', url);
-        await page.waitForTimeout(2000);
-        return;
-      }
-    }
-
-    await page.waitForTimeout(1000);
-    attempts++;
-  }
-
-  console.log('[search] Timeout reached. Final frame URLs:');
-  page.frames().forEach(f => console.log(`  - ${f.url()}`));
-  throw new Error('Search results did not load within timeout');
+  // Give the SPA time to render results into the DOM
+  await page.waitForTimeout(3000);
 }
 
 module.exports = { search };
