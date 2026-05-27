@@ -29,9 +29,13 @@ const { write, reset } = require('./writer');
       console.log(`[${i + 1}/${urls.length}] ${urls[i]}`);
       const record = await extractDetail(page, urls[i]);
       if (record) write(config.outputPath, record);
+      else console.log(`  ⚠ Failed to extract details for: ${urls[i]}`);
     }
 
     console.log(`Done. Results saved to ${config.outputPath}`);
+  } catch (err) {
+    console.error('Crawler error:', err.message);
+    process.exitCode = 1;
   } finally {
     await browser.close();
   }
