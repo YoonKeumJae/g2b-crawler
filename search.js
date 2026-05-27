@@ -72,26 +72,36 @@ async function search(page, keyword, dateRange) {
   console.log('[search] ✓ Filled keyword field');
   
   // Fill in the date range
-  // Find the visible date inputs (the ones for the active tab)
-  // The inputs have IDs containing 'ibxStrDay' and 'ibxEndDay'
+  // WebSquare date inputs require click+type+Tab to trigger internal data binding.
+  // .fill() sets the DOM value but doesn't fire WebSquare's change handlers.
   const visibleDateInputs = await page.locator('input.udcDateReadOnly:visible').all();
-  
+
+  const fillDateInput = async (locator, value) => {
+    await locator.click({ clickCount: 3 }); // select all
+    await locator.fill('');                 // clear first
+    await locator.type(value, { delay: 40 }); // type char by char
+    await page.keyboard.press('Tab');          // trigger WebSquare blur/change
+    await page.waitForTimeout(300);
+    const actual = await locator.inputValue();
+    console.log(`[search] date input value after type: "${actual}"`);
+  };
+
   if (visibleDateInputs.length >= 2) {
-    // Typically first two visible are start and end date
-    await visibleDateInputs[0].fill(dateRange.from);
-    await visibleDateInputs[1].fill(dateRange.to);
+    await fillDateInput(visibleDateInputs[0], dateRange.from);
+    await fillDateInput(visibleDateInputs[1], dateRange.to);
     console.log('[search] ✓ Filled date range');
   } else {
-    // Fallback: try by ID pattern
-    await page.fill('input[id*="ibxStrDay"]:visible', dateRange.from);
-    await page.fill('input[id*="ibxEndDay"]:visible', dateRange.to);
+    const startLoc = page.locator('input[id*="ibxStrDay"]:visible');
+    const endLoc   = page.locator('input[id*="ibxEndDay"]:visible');
+    await fillDateInput(startLoc, dateRange.from);
+    await fillDateInput(endLoc,   dateRange.to);
     console.log('[search] ✓ Filled date range (fallback method)');
   }
-  
-  // Wait for any loading overlays to disappear
+
+  // Wait for UI to stabilize after date entry
   console.log('[search] Waiting for UI to stabilize...');
   await page.waitForTimeout(1000);
-  
+
   // Wait for modal overlays to disappear
   await page.waitForSelector('.w2modal', { state: 'hidden', timeout: 10000 }).catch(() => {
     console.log('[search] (no modal to wait for)');
@@ -107,27 +117,34 @@ async function search(page, keyword, dateRange) {
   
   // Wait for the processing iframe to appear (this indicates the search is being processed)
   console.log('[search] Waiting for search results to process...');
-  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
-  
-  // The G2B site shows a processing message in an iframe, then loads results
-  // We need to wait for the processing to complete
+  await page.waitForTimeout(2000); // let processMsg appear first
+
+  // G2B uses a processMsg iframe as a loading overlay.
+  // When the search completes, processMsg disappears and results load into the SPA
+  // (either in the main frame DOM or in a new iframe depending on page layout).
   let attempts = 0;
-  const maxAttempts = 30; // 30 seconds max
+  const maxAttempts = 30;
 
   while (attempts < maxAttempts) {
     const frames = page.frames();
 
-    // Log all frame URLs every 5 seconds for debugging
     if (attempts % 5 === 0) {
       console.log(`[search] Frame URLs at attempt ${attempts}:`);
       frames.forEach(f => console.log(`  - ${f.url()}`));
     }
 
-    // Check if any frame has loaded with results (not the processing message)
+    const processingFrame = frames.find(f => f.url().includes('processMsg'));
+
+    // processMsg disappeared → search completed, results now in main SPA frame
+    if (!processingFrame) {
+      console.log('[search] ✓ processMsg gone – search completed');
+      await page.waitForTimeout(2000);
+      return;
+    }
+
+    // Also check for a dedicated results iframe URL
     for (const frame of frames) {
       const url = frame.url();
-
-      // Check if this is a results frame (contains viewBidInfoList or similar)
       if (url && (
         url.includes('viewBidInfoList') ||
         url.includes('bidInfoList') ||
@@ -137,7 +154,7 @@ async function search(page, keyword, dateRange) {
         url.includes('ntceList') ||
         url.includes('listPage')
       )) {
-        console.log('[search] ✓ Results page loaded:', url);
+        console.log('[search] ✓ Results frame loaded:', url);
         await page.waitForTimeout(2000);
         return;
       }
@@ -147,12 +164,9 @@ async function search(page, keyword, dateRange) {
     attempts++;
   }
 
-  // Print final frame state before throwing
   console.log('[search] Timeout reached. Final frame URLs:');
   page.frames().forEach(f => console.log(`  - ${f.url()}`));
-
-  // If we get here, the iframe did not load within the timeout
-  throw new Error('Search iframe did not load within timeout');
+  throw new Error('Search results did not load within timeout');
 }
 
 module.exports = { search };
