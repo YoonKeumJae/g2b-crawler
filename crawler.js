@@ -25,9 +25,10 @@ const { write, reset } = require('./writer');
     }
 
     reset();
+    const detailPage = await browser.newPage();
     for (let i = 0; i < urls.length; i++) {
       console.log(`[${i + 1}/${urls.length}] ${urls[i]}`);
-      const record = await extractDetail(page, urls[i]);
+      const record = await extractDetail(detailPage, urls[i]);
       if (record) write(config.outputPath, record);
       else console.log(`  ⚠ Failed to extract details for: ${urls[i]}`);
     }

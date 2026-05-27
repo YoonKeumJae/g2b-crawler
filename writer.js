@@ -10,6 +10,11 @@ function write(outputPath, record) {
   if (headers === null) {
     headers = Object.keys(record);
     fs.writeFileSync(outputPath, headers.join(',') + '\n');
+  } else {
+    const newFields = Object.keys(record).filter(k => !headers.includes(k));
+    if (newFields.length > 0) {
+      console.warn(`[writer] Warning: new fields not in CSV header will be dropped: ${newFields.join(', ')}`);
+    }
   }
 
   const row = headers
