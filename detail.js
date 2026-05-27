@@ -156,12 +156,7 @@ async function navigateToDetailByClick(page, identifier) {
         }
       }
       
-      // Fallback: just click the first link if identifier not found
-      if (links.length > 0) {
-        links[0].click();
-        return true;
-      }
-      
+      // If identifier not found, don't click random links
       return false;
     }, identifier);
     
@@ -171,6 +166,7 @@ async function navigateToDetailByClick(page, identifier) {
       return true;
     }
     
+    console.log(`[detail] Could not find link for identifier: ${identifier}`);
     return false;
   } catch (error) {
     console.log('[detail] Error navigating by click:', error.message);
@@ -186,6 +182,9 @@ async function navigateToDetailByClick(page, identifier) {
  * @returns {Promise<Object|null>} Flat key-value object or null on failure
  */
 async function extractDetail(page, identifier, retries = 3) {
+  if (!page) throw new Error('page is required');
+  if (!identifier) throw new Error('identifier is required');
+  
   console.log(`[detail] Extracting detail for: ${identifier}`);
   
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -198,7 +197,7 @@ async function extractDetail(page, identifier, retries = 3) {
           waitUntil: 'domcontentloaded',
           timeout: 30000
         });
-        await page.waitForTimeout(2000);
+        await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
       } else {
         // It's a bid number, need to click the link in results frame
         console.log('[detail] Navigating via click for identifier:', identifier);
@@ -228,8 +227,9 @@ async function extractDetail(page, identifier, retries = 3) {
       // Extract all fields
       const fields = await extractFieldsFromFrame(detailFrame);
       
+      console.log(`[detail] Extracted ${Object.keys(fields).length} fields from detail page`);
       if (Object.keys(fields).length === 0) {
-        throw new Error('No fields extracted from detail page');
+        throw new Error(`No fields extracted from detail page for identifier: ${identifier}`);
       }
       
       console.log(`[detail] ✓ Extracted ${Object.keys(fields).length} fields`);
