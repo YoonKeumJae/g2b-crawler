@@ -161,8 +161,7 @@ async function navigateToDetailByClick(page, identifier) {
     }, identifier);
     
     if (clicked) {
-      // Wait for detail page to load
-      await page.waitForTimeout(2000);
+      await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
       return true;
     }
     
