@@ -62,27 +62,24 @@ async function extractUrlsFromCurrentPage(frame) {
           const match1 = onclick.match(/fn_detail\s*\(\s*['"]([^'"]+)['"]/);
           if (match1) {
             urls.push(match1[1]);
-            return;
-          }
-          
-          // Pattern 2: onclick="viewBidInfo('number', ...)"
-          const match2 = onclick.match(/\(['"]([0-9\-]+)['"]/);
-          if (match2) {
-            urls.push(match2[1]);
-            return;
-          }
-          
-          // Pattern 3: href if available
-          const href = link.getAttribute('href');
-          if (href && href !== '#' && href !== 'javascript:void(0)') {
-            urls.push(href);
-            return;
-          }
-          
-          // Fallback: use link text if it looks like a number
-          const text = link.textContent.trim();
-          if (/^[0-9\-]+$/.test(text) && text.length >= 8) {
-            urls.push(text);
+          } else {
+            // Pattern 2: onclick="viewBidInfo('number', ...)" or fn_detail with number
+            const match2 = onclick.match(/(?:viewBidInfo|fn_detail)\s*\(\s*['"]([0-9\-]+)['"]/);
+            if (match2) {
+              urls.push(match2[1]);
+            } else {
+              // Pattern 3: href if available
+              const href = link.getAttribute('href');
+              if (href && href !== '#' && href !== 'javascript:void(0)') {
+                urls.push(href);
+              } else {
+                // Fallback: use link text if it looks like a number
+                const text = link.textContent.trim();
+                if (/^[0-9\-]+$/.test(text) && text.length >= 8) {
+                  urls.push(text);
+                }
+              }
+            }
           }
         });
         
@@ -182,7 +179,7 @@ async function collectUrls(page) {
     }
     
     // Wait for results to load
-    await page.waitForTimeout(2000);
+    await resultsFrame.waitForSelector('tbody tr', { timeout: 5000 }).catch(() => {});
     
     // Collect URLs from all pages
     while (currentPage <= maxPages) {
@@ -235,8 +232,9 @@ async function collectUrls(page) {
     throw error;
   }
   
-  console.log(`[paginator] Collection complete. Total URLs: ${allUrls.length}`);
-  return allUrls;
+  const uniqueUrls = [...new Set(allUrls)];
+  console.log(`[paginator] Collection complete. Total URLs: ${uniqueUrls.length} (${allUrls.length - uniqueUrls.length} duplicates removed)`);
+  return uniqueUrls;
 }
 
 module.exports = { collectUrls };
