@@ -32,6 +32,8 @@ const { ExcelWriter } = require('./writer');
       console.log(`\n=== Keyword: "${keyword}" | ${dateRange.from} ~ ${dateRange.to} ===`);
       const page = await context.newPage();
 
+      writer.prepareSheet(keyword, dateRange);
+
       try {
         await search(page, keyword, dateRange);
         console.log('Search submitted. Processing results...');
@@ -64,11 +66,11 @@ const { ExcelWriter } = require('./writer');
       }
     }
 
+    await writer.save();
     if (totalSaved > 0) {
-      await writer.save();
       console.log(`Total: ${totalSaved} records across ${keywords.length} keyword(s).`);
     } else {
-      console.log('No records found.');
+      console.log('No records found. Empty sheets saved.');
     }
   } catch (err) {
     console.error('Crawler error:', err.message);

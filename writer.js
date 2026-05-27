@@ -72,6 +72,10 @@ class ExcelWriter {
     return this.sheets[keyword];
   }
 
+  prepareSheet(keyword, dateRange) {
+    this._getOrCreateSheet(keyword, dateRange);
+  }
+
   addRecord(keyword, dateRange, record) {
     const info = this._getOrCreateSheet(keyword, dateRange);
     const row = info.sheet.getRow(info.nextRow);
