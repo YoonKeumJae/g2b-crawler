@@ -8,8 +8,8 @@
  * @param {Page} page - Playwright page object
  * @param {string} keyword - Search keyword (e.g., "ees")
  * @param {Object} dateRange - Date range object
- * @param {string} dateRange.from - Start date in YYYY/MM/DD format
- * @param {string} dateRange.to - End date in YYYY/MM/DD format
+ * @param {string} dateRange.from - Start date in yyyyMMdd format (e.g. "20260427")
+ * @param {string} dateRange.to - End date in yyyyMMdd format (e.g. "20260527")
  * @returns {Promise<void>}
  */
 async function search(page, keyword, dateRange) {
