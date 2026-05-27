@@ -10,7 +10,7 @@ function getDateRange() {
   }
   const to = new Date();
   const from = new Date();
-  from.setMonth(from.getMonth() - 1);
+  from.setMonth(from.getMonth() - 6);
   return { from: fmt(from), to: fmt(to) };
 }
 
