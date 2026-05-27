@@ -4,6 +4,38 @@
  */
 
 /**
+ * Dismisses notice/announcement popups on G2B homepage
+ * @param {Page} page
+ */
+async function dismissPopups(page) {
+  console.log('[search] Checking for popups...');
+  try {
+    // Try common close button selectors for G2B notice popups
+    const closeSelectors = [
+      'a:has-text("닫기")',
+      'button:has-text("닫기")',
+      'img[alt="닫기"]',
+      '.w2popup_close',
+      '.close_btn',
+      '[class*="close"]:visible',
+    ];
+
+    for (const selector of closeSelectors) {
+      const buttons = await page.locator(selector).all();
+      for (const btn of buttons) {
+        if (await btn.isVisible()) {
+          await btn.click({ force: true }).catch(() => {});
+          console.log(`[search] ✓ Closed popup with selector: ${selector}`);
+          await page.waitForTimeout(500);
+        }
+      }
+    }
+  } catch (e) {
+    console.log('[search] (no popups found or already closed)');
+  }
+}
+
+/**
  * Performs bid announcement search on G2B
  * @param {Page} page - Playwright page object
  * @param {string} keyword - Search keyword (e.g., "ees")
@@ -28,6 +60,9 @@ async function search(page, keyword, dateRange) {
   
   // Wait for dynamic content to load
   await page.waitForTimeout(3000);
+
+  // Dismiss any notice/announcement popups (공지사항 팝업)
+  await dismissPopups(page);
   
   console.log(`[search] Filling search form - keyword: "${keyword}", dates: ${dateRange.from} ~ ${dateRange.to}`);
   
