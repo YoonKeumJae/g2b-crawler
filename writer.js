@@ -9,7 +9,8 @@ function write(outputPath, record) {
 
   if (headers === null) {
     headers = Object.keys(record);
-    fs.writeFileSync(outputPath, headers.join(',') + '\n');
+    // UTF-8 BOM required for Excel to correctly display Korean characters
+    fs.writeFileSync(outputPath, '\uFEFF' + headers.join(',') + '\n');
   } else {
     const newFields = Object.keys(record).filter(k => !headers.includes(k));
     if (newFields.length > 0) {
