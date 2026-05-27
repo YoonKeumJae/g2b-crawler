@@ -13,6 +13,11 @@
  * @returns {Promise<void>}
  */
 async function search(page, keyword, dateRange) {
+  // Parameter validation
+  if (!page) throw new Error('page is required');
+  if (!keyword) throw new Error('keyword is required');
+  if (!dateRange?.from || !dateRange?.to) throw new Error('dateRange must have from and to dates');
+  
   console.log(`[search] Navigating to G2B homepage...`);
   
   // Navigate to G2B homepage
@@ -63,11 +68,11 @@ async function search(page, keyword, dateRange) {
   const searchButton = page.locator('a.main-srch:has-text("검색하기"):visible').first();
   
   console.log('[search] Clicking search button...');
-  await searchButton.click({ force: true });
+  await searchButton.click({ force: true, timeout: 10000 });
   
   // Wait for the processing iframe to appear (this indicates the search is being processed)
   console.log('[search] Waiting for search results to process...');
-  await page.waitForTimeout(2000);
+  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
   
   // The G2B site shows a processing message in an iframe, then loads results
   // We need to wait for the processing to complete
@@ -95,12 +100,8 @@ async function search(page, keyword, dateRange) {
     attempts++;
   }
   
-  // If we get here, the results might be loaded in the main page instead of iframe
-  // or the site behavior has changed
-  console.log('[search] Search submitted (results may be in main page or iframe)');
-  
-  // Take a final wait to ensure any async operations complete
-  await page.waitForTimeout(2000);
+  // If we get here, the iframe did not load within the timeout
+  throw new Error('Search iframe did not load within timeout');
 }
 
 module.exports = { search };
