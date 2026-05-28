@@ -89,6 +89,134 @@ class ExcelWriter {
     info.nextRow++;
   }
 
+  addAnalysisSheets(resultData) {
+    this._addSummarySheet(resultData);
+    this._addAttachmentsSheet(resultData);
+    this._addAwardsSheet(resultData);
+    this._addVendorSummarySheet(resultData);
+  }
+
+  _addSummarySheet(resultData) {
+    const sheet = this._replaceSheet('Summary');
+    const headers = [
+      '키워드',
+      '입찰공고번호',
+      '공고명',
+      '공고기관',
+      '수요기관',
+      '공고일',
+      '입찰서마감일시',
+      '개찰일시',
+      '낙찰상태',
+      '낙찰업체',
+      '낙찰금액',
+      'RFP파일수',
+      '첨부파일수',
+    ];
+    this._writePlainTable(sheet, headers, (resultData.bids || []).map((bid) => {
+      const fields = bid.detailFields || {};
+      const attachments = bid.attachments || [];
+      const rfpCount = attachments.filter((item) => item.kind === 'RFP').length;
+      return [
+        bid.keyword || '',
+        bid.bidNumber || '',
+        bid.title || fields.공고명 || '',
+        fields.공고기관 || '',
+        fields.수요기관 || '',
+        fields['게시 일시'] || fields.공고일 || '',
+        fields.입찰서마감일시 || fields.입찰마감일시 || '',
+        fields.개찰일시 || '',
+        bid.award?.status || '',
+        bid.award?.winnerName || '',
+        bid.award?.awardAmount || '',
+        rfpCount,
+        attachments.length,
+      ];
+    }));
+  }
+
+  _addAttachmentsSheet(resultData) {
+    const sheet = this._replaceSheet('Attachments');
+    const headers = ['입찰공고번호', '키워드', '파일명', '분류', '다운로드상태', '로컬경로', '원본URL'];
+    const rows = [];
+    for (const bid of resultData.bids || []) {
+      for (const attachment of bid.attachments || []) {
+        rows.push([
+          bid.bidNumber || attachment.bidNumber || '',
+          bid.keyword || '',
+          attachment.fileName || '',
+          attachment.kind || '',
+          attachment.downloadStatus || '',
+          attachment.localPath || '',
+          attachment.downloadUrl || '',
+        ]);
+      }
+    }
+    this._writePlainTable(sheet, headers, rows);
+  }
+
+  _addAwardsSheet(resultData) {
+    const sheet = this._replaceSheet('Awards');
+    const headers = ['입찰공고번호', '키워드', '상태', '분류', '낙찰업체', '사업자번호', '낙찰금액', '투찰률', '개찰일자', '개찰시각', '출처', '오류'];
+    const rows = (resultData.bids || []).map((bid) => {
+      const award = bid.award || {};
+      return [
+        bid.bidNumber || '',
+        bid.keyword || '',
+        award.status || '',
+        award.classification || '',
+        award.winnerName || '',
+        award.winnerBusinessNo || '',
+        award.awardAmount || '',
+        award.bidRate || '',
+        award.openDate || '',
+        award.openTime || '',
+        award.source || '',
+        award.error || '',
+      ];
+    });
+    this._writePlainTable(sheet, headers, rows);
+  }
+
+  _addVendorSummarySheet(resultData) {
+    const sheet = this._replaceSheet('Vendor Summary');
+    const totals = new Map();
+
+    for (const bid of resultData.bids || []) {
+      const name = bid.award?.winnerName;
+      if (!name) continue;
+      const current = totals.get(name) || { count: 0, amount: 0 };
+      current.count += 1;
+      current.amount += Number(String(bid.award?.awardAmount || '0').replace(/,/g, '')) || 0;
+      totals.set(name, current);
+    }
+
+    const rows = Array.from(totals.entries())
+      .map(([name, value]) => [name, value.count, value.amount])
+      .sort((a, b) => b[2] - a[2]);
+
+    this._writePlainTable(sheet, ['낙찰업체', '낙찰건수', '총낙찰금액'], rows);
+  }
+
+  _replaceSheet(name) {
+    const existing = this.workbook.getWorksheet(name);
+    if (existing) this.workbook.removeWorksheet(existing.id);
+    return this.workbook.addWorksheet(name);
+  }
+
+  _writePlainTable(sheet, headers, rows) {
+    sheet.addRow(headers);
+    sheet.getRow(1).font = { bold: true };
+    for (const row of rows) sheet.addRow(row);
+    headers.forEach((header, index) => {
+      const maxLen = Math.max(
+        String(header).length,
+        ...rows.map((row) => String(row[index] || '').length)
+      );
+      sheet.getColumn(index + 1).width = Math.min(Math.max(maxLen + 2, 12), 60);
+    });
+  }
+
   async save() {
     // Remove original template sheet (Sheet1) since we created keyword sheets
     if (Object.keys(this.sheets).length > 0) {

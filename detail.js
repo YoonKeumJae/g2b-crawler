@@ -11,6 +11,8 @@
  * @param {Page} page
  * @returns {Promise<Object>}
  */
+const { downloadAttachments, extractAttachments } = require('./attachment');
+
 async function extractFields(page) {
   return await page.evaluate(() => {
     // Find the detail content container - excludes the search form
@@ -54,7 +56,7 @@ async function extractFields(page) {
  * @param {number} rowIndex  - 0-based index matching grdTotalSrch_{N}_untyTitleTd
  * @returns {Promise<Object|null>}
  */
-async function extractDetail(page, rowIndex) {
+async function extractDetail(page, rowIndex, options = {}) {
   const selector = `#mf_wfm_container_grdTotalSrch_${rowIndex}_untyTitleTd`;
   const MAX_RETRIES = 2;
 
@@ -75,7 +77,7 @@ async function extractDetail(page, rowIndex) {
         responsePromise = page.waitForResponse(
           r => r.url().includes('selectItemAnncMngV.do') && r.status() === 200,
           { timeout: 20000 }
-        );
+        ).catch(() => null);
       } catch (_) {
         responsePromise = Promise.resolve();
       }
@@ -84,19 +86,25 @@ async function extractDetail(page, rowIndex) {
 
       // Wait for response OR for detail container to appear (whichever first)
       await Promise.race([
-        responsePromise.catch(() => {}),
+        responsePromise,
         page.waitForSelector('[id*="bidPbancWfrm_mainContents"]', { timeout: 20000 }),
       ]);
       await page.waitForTimeout(1500);
 
       const fields = await extractFields(page);
-      console.log(`[detail] ✓ Extracted ${Object.keys(fields).length} fields`);
+      const fieldCount = Object.keys(fields).length;
+      const attachments = await extractAttachments(page, fields.입찰공고번호 || fields.공고번호 || '');
+      fields.__attachments = options.attachmentDir
+        ? await downloadAttachments(page, attachments, options.attachmentDir)
+        : attachments;
+      console.log(`[detail] ✓ Extracted ${fieldCount} fields`);
 
       await page.goBack({ waitUntil: 'domcontentloaded' });
       await page.waitForSelector('#mf_wfm_container_testTable', { timeout: 20000 });
+      await page.waitForSelector(selector, { timeout: 20000 });
       await page.waitForTimeout(1000);
 
-      return Object.keys(fields).length > 0 ? fields : null;
+      return fieldCount > 0 ? fields : null;
     } catch (err) {
       console.log(`[detail] ⚠ Attempt ${attempt} failed: ${err.message.slice(0, 80)}`);
       if (attempt >= MAX_RETRIES) {

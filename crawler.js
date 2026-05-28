@@ -4,6 +4,8 @@ const { search } = require('./search');
 const { collectCurrentPageRows, goToNextPage } = require('./paginator');
 const { extractDetail } = require('./detail');
 const { ExcelWriter } = require('./writer');
+const { ResultStore } = require('./resultStore');
+const { classifyAwardStatus, inferBusinessType, inferOpeningDate, lookupAwardViaOpenApi, normalizeBidNumber } = require('./award');
 
 (async () => {
   const dateRange = config.getDateRange();
@@ -24,6 +26,11 @@ const { ExcelWriter } = require('./writer');
 
   const writer = new ExcelWriter();
   await writer.init(config.outputPath);
+  const resultStore = new ResultStore({
+    outputPath: config.jsonOutputPath,
+    dateRange,
+    keywords,
+  });
 
   let totalSaved = 0;
 
@@ -53,9 +60,33 @@ const { ExcelWriter } = require('./writer');
             totalSaved++;
             console.log(`[${totalSaved}] ${row.bidNumber} (row ${row.rowIndex})`);
             try {
-              const record = await extractDetail(page, row.rowIndex);
-              if (record) writer.addRecord(keyword, dateRange, record);
-              else console.log(`  ⚠ Failed to extract details for row ${row.rowIndex}`);
+              const record = await extractDetail(page, row.rowIndex, { attachmentDir: config.attachmentDir });
+              if (record) {
+                const downloadedAttachments = record.__attachments || [];
+                delete record.__attachments;
+
+                const bidNumber = normalizeBidNumber(record.입찰공고번호 || record.공고번호 || row.bidNumber);
+                const award = await lookupAwardViaOpenApi({
+                  apiKey: config.dataGoKrApiKey,
+                  bidNumber,
+                  businessType: inferBusinessType(record),
+                  openingDate: inferOpeningDate(record),
+                });
+                award.classification = classifyAwardStatus({ award, detailFields: record });
+
+                writer.addRecord(keyword, dateRange, record);
+                resultStore.upsertBid({
+                  keyword,
+                  bidNumber,
+                  title: record.공고명 || '',
+                  detailFields: record,
+                  attachments: downloadedAttachments,
+                  award,
+                });
+                resultStore.save();
+              } else {
+                console.log(`  ⚠ Failed to extract details for row ${row.rowIndex}`);
+              }
             } catch (rowErr) {
               console.log(`  ⚠ Skipped row ${row.rowIndex}: ${rowErr.message.slice(0, 80)}`);
             }
@@ -70,7 +101,9 @@ const { ExcelWriter } = require('./writer');
       }
     }
 
+    writer.addAnalysisSheets(resultStore.toJSON());
     await writer.save();
+    resultStore.save();
     if (totalSaved > 0) {
       console.log(`Total: ${totalSaved} records across ${keywords.length} keyword(s).`);
     } else {
