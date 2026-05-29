@@ -7,6 +7,12 @@
 const ExcelJS = require('exceljs');
 const path = require('path');
 const fs = require('fs');
+const {
+  INTEGRATED_HEADERS,
+  AWARD_HEADERS,
+  CONTRACT_HEADERS,
+  ERROR_HEADERS,
+} = require('./reportRows');
 
 const TEMPLATE_PATH = path.join(__dirname, 'template.xlsx');
 
@@ -20,6 +26,8 @@ class ExcelWriter {
     this.templateSheet = null;
     this.columnMap = {};  // header text → column index (1-based)
     this.sheets = {};     // keyword → { sheet, nextRow }
+    this.extraSheets = {};
+    this.usedSheetNames = new Set();
     this.outputPath = null;
   }
 
@@ -41,7 +49,7 @@ class ExcelWriter {
   _getOrCreateSheet(keyword, dateRange) {
     if (this.sheets[keyword]) return this.sheets[keyword];
 
-    const sheetName = String(keyword).slice(0, 31);
+    const sheetName = this._uniqueSheetName(keyword);
     const sheet = this.workbook.addWorksheet(sheetName);
 
     // Copy column widths
@@ -89,9 +97,64 @@ class ExcelWriter {
     info.nextRow++;
   }
 
+  addIntegratedRecord(record) {
+    this._addFixedRecord('통합리포트', INTEGRATED_HEADERS, record);
+  }
+
+  addAwardRecord(record) {
+    this._addFixedRecord('낙찰정보', AWARD_HEADERS, record);
+  }
+
+  addContractRecord(record) {
+    this._addFixedRecord('계약정보', CONTRACT_HEADERS, record);
+  }
+
+  addErrorLog(record) {
+    this._addFixedRecord('오류로그', ERROR_HEADERS, record);
+  }
+
+  _addFixedRecord(sheetName, headers, record) {
+    const info = this._getOrCreateFixedSheet(sheetName, headers);
+    const row = info.sheet.getRow(info.nextRow);
+    headers.forEach((header, index) => {
+      row.getCell(index + 1).value = record[header] === undefined || record[header] === null
+        ? ''
+        : String(record[header]);
+    });
+    row.commit();
+    info.nextRow++;
+  }
+
+  _getOrCreateFixedSheet(sheetName, headers) {
+    if (this.extraSheets[sheetName]) return this.extraSheets[sheetName];
+    const sheet = this.workbook.addWorksheet(sheetName);
+    headers.forEach((header, index) => {
+      const cell = sheet.getCell(1, index + 1);
+      cell.value = header;
+      cell.font = { bold: true };
+    });
+    sheet.views = [{ state: 'frozen', ySplit: 1 }];
+    this.extraSheets[sheetName] = { sheet, nextRow: 2 };
+    this.usedSheetNames.add(sheetName);
+    return this.extraSheets[sheetName];
+  }
+
+  _uniqueSheetName(rawName) {
+    const base = String(rawName || 'Sheet').slice(0, 31);
+    let name = base;
+    let index = 1;
+    while (this.usedSheetNames.has(name) || this.workbook.getWorksheet(name)) {
+      const suffix = `_${index}`;
+      name = base.slice(0, 31 - suffix.length) + suffix;
+      index++;
+    }
+    this.usedSheetNames.add(name);
+    return name;
+  }
+
   async save() {
     // Remove original template sheet (Sheet1) since we created keyword sheets
-    if (Object.keys(this.sheets).length > 0) {
+    if (Object.keys(this.sheets).length > 0 || Object.keys(this.extraSheets).length > 0) {
       this.workbook.removeWorksheet(this.templateSheet.id);
     }
 

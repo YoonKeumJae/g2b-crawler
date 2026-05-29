@@ -4,10 +4,26 @@ const { search } = require('./search');
 const { collectCurrentPageRows, goToNextPage } = require('./paginator');
 const { extractDetail } = require('./detail');
 const { ExcelWriter } = require('./writer');
+const { parseBidNumber } = require('./bidKey');
+const { G2BApiClient } = require('./g2bApiClient');
+const { lookupEnrichmentByBidNumber } = require('./enrichment');
+const { buildReportRows } = require('./reportRows');
 
 (async () => {
   const dateRange = config.getDateRange();
   const keywords = config.keywords;
+
+  if (config.apiEnabled && !config.serviceKey) {
+    console.error('DATA_GO_KR_SERVICE_KEY is required for award/contract enrichment');
+    process.exitCode = 1;
+    return;
+  }
+
+  const apiClient = new G2BApiClient({
+    serviceKey: config.serviceKey,
+    timeoutMs: config.apiTimeoutMs,
+    retries: config.apiRetries,
+  });
 
   const browser = await chromium.launch({
     headless: config.headless,
@@ -26,6 +42,9 @@ const { ExcelWriter } = require('./writer');
   await writer.init(config.outputPath);
 
   let totalSaved = 0;
+  let apiSuccessCount = 0;
+  let apiNoResultCount = 0;
+  let apiErrorCount = 0;
 
   try {
     for (const keyword of keywords) {
@@ -54,10 +73,65 @@ const { ExcelWriter } = require('./writer');
             console.log(`[${totalSaved}] ${row.bidNumber} (row ${row.rowIndex})`);
             try {
               const record = await extractDetail(page, row.rowIndex);
-              if (record) writer.addRecord(keyword, dateRange, record);
-              else console.log(`  ⚠ Failed to extract details for row ${row.rowIndex}`);
+              if (!record) {
+                console.log(`  ⚠ Failed to extract details for row ${row.rowIndex}`);
+                writer.addErrorLog({
+                  검색키워드: keyword,
+                  입찰공고번호: row.bidNumber || '',
+                  단계: '상세 추출',
+                  오류코드: 'DETAIL_EMPTY',
+                  오류메시지: `Failed to extract details for row ${row.rowIndex}`,
+                });
+                continue;
+              }
+
+              writer.addRecord(keyword, dateRange, record);
+
+              const bidKey = parseBidNumber(record.입찰공고번호 || row.bidNumber);
+              let enrichment = null;
+
+              if (!bidKey) {
+                writer.addErrorLog({
+                  검색키워드: keyword,
+                  입찰공고번호: record.입찰공고번호 || row.bidNumber || '',
+                  단계: '공고번호 정규화',
+                  오류코드: 'INVALID_BID_NUMBER',
+                  오류메시지: '입찰공고번호 형식이 비어 있거나 불완전합니다.',
+                });
+              } else if (config.apiEnabled) {
+                try {
+                  enrichment = await lookupEnrichmentByBidNumber(apiClient, bidKey);
+                  if (enrichment.status === '확인') apiSuccessCount++;
+                  else if (enrichment.status === '정보 없음') apiNoResultCount++;
+                  else apiErrorCount++;
+                } catch (apiErr) {
+                  apiErrorCount++;
+                  enrichment = {
+                    status: 'API 조회 실패',
+                    items: [],
+                    errors: [{
+                      stage: '계약과정통합공개',
+                      code: 'UNEXPECTED_ERROR',
+                      message: apiErr.message,
+                    }],
+                  };
+                }
+              }
+
+              const reportRows = buildReportRows({ keyword, record, bidKey, enrichment });
+              writer.addIntegratedRecord(reportRows.integrated);
+              reportRows.award.forEach((award) => writer.addAwardRecord(award));
+              reportRows.contract.forEach((contract) => writer.addContractRecord(contract));
+              reportRows.errors.forEach((error) => writer.addErrorLog(error));
             } catch (rowErr) {
               console.log(`  ⚠ Skipped row ${row.rowIndex}: ${rowErr.message.slice(0, 80)}`);
+              writer.addErrorLog({
+                검색키워드: keyword,
+                입찰공고번호: row.bidNumber || '',
+                단계: '행 처리',
+                오류코드: 'ROW_ERROR',
+                오류메시지: rowErr.message,
+              });
             }
           }
 
@@ -73,6 +147,7 @@ const { ExcelWriter } = require('./writer');
     await writer.save();
     if (totalSaved > 0) {
       console.log(`Total: ${totalSaved} records across ${keywords.length} keyword(s).`);
+      console.log(`API: success=${apiSuccessCount}, noResult=${apiNoResultCount}, error=${apiErrorCount}`);
     } else {
       console.log('No records found. Empty sheets saved.');
     }

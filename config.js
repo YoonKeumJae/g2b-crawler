@@ -1,5 +1,9 @@
+const { loadEnvFile } = require('./envLoader');
+
+loadEnvFile();
+
 // 검색 기간 직접 지정 (형식: 'YYYYMMDD')
-// null 로 두면 오늘 기준 최근 30일로 자동 설정됩니다.
+// null 로 두면 오늘 기준 최근 6개월로 자동 설정됩니다.
 const DATE_FROM = null;  // 예: '20260101'
 const DATE_TO   = null;  // 예: '20260527'
 
@@ -18,5 +22,9 @@ module.exports = {
   keywords: ['ees', '오피스365', 'ms오피스'],
   headless: true,
   outputPath: 'output/results.xlsx',
+  apiEnabled: true,
+  apiTimeoutMs: 20000,
+  apiRetries: 2,
+  serviceKey: process.env.DATA_GO_KR_SERVICE_KEY,
   getDateRange,
 };
