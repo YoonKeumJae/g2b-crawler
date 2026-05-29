@@ -38,6 +38,45 @@ test('returns parsed items on success and includes default query parameters', as
   expect(result.items).toEqual([{ bidNtceNo: 'R26' }]);
 });
 
+test('follows pagination until all rows are returned', async () => {
+  global.fetch = jest.fn()
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        response: {
+          header: { resultCode: '00' },
+          body: {
+            pageNo: 1,
+            numOfRows: 2,
+            totalCount: 3,
+            items: [{ item: { bidNtceNo: 'R26-1' } }, { item: { bidNtceNo: 'R26-2' } }],
+          },
+        },
+      }),
+    })
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        response: {
+          header: { resultCode: '00' },
+          body: {
+            pageNo: 2,
+            numOfRows: 2,
+            totalCount: 3,
+            items: [{ item: { bidNtceNo: 'R26-3' } }],
+          },
+        },
+      }),
+    });
+
+  const client = new G2BApiClient({ serviceKey: 'key' });
+  const result = await client.getJson('https://example.test/api', { bidNtceNo: 'R26' });
+  expect(result.ok).toBe(true);
+  expect(result.items.map((item) => item.bidNtceNo)).toEqual(['R26-1', 'R26-2', 'R26-3']);
+  expect(global.fetch).toHaveBeenCalledTimes(2);
+  expect(new URL(global.fetch.mock.calls[1][0]).searchParams.get('pageNo')).toBe('2');
+});
+
 test('normalizes an already encoded service key before URL encoding', async () => {
   global.fetch = jest.fn().mockResolvedValue({
     ok: true,

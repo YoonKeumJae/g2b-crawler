@@ -1,4 +1,5 @@
 const { lookupByBidNumber } = require('../contractProcess');
+const { CONTRACT_PROCESS_ENDPOINTS } = require('../contractProcess');
 
 function ok(items) {
   return { ok: true, items };
@@ -50,4 +51,8 @@ test('returns api failure when any endpoint errors and no endpoint has items', a
   const result = await lookupByBidNumber(client, { bidNtceNo: 'R26', bidNtceOrd: '000' });
   expect(result.status).toBe('API 조회 실패');
   expect(result.errors).toHaveLength(1);
+});
+
+test('uses https endpoints so service keys are not sent over plain http', () => {
+  expect(CONTRACT_PROCESS_ENDPOINTS.every((endpoint) => endpoint.url.startsWith('https://'))).toBe(true);
 });

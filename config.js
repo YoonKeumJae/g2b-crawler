@@ -18,13 +18,18 @@ function getDateRange() {
   return { from: fmt(from), to: fmt(to) };
 }
 
+const serviceKey = process.env.DATA_GO_KR_SERVICE_KEY || process.env.DATA_GO_KR_API_KEY || process.env.API_KEY || '';
+
 module.exports = {
   keywords: ['ees', '오피스365', 'ms오피스'],
   headless: true,
   outputPath: 'output/results.xlsx',
+  jsonOutputPath: 'output/results.json',
+  attachmentDir: 'output/attachments',
   apiEnabled: true,
   apiTimeoutMs: 20000,
   apiRetries: 2,
-  serviceKey: process.env.DATA_GO_KR_SERVICE_KEY,
+  serviceKey,
+  dataGoKrApiKey: serviceKey,
   getDateRange,
 };

@@ -15,9 +15,25 @@ class G2BApiClient {
       };
     }
 
+    const first = await this._getPage(url, params, stage, 1);
+    if (!first.ok) return first;
+
+    const items = [...first.items];
+    const { totalCount, numOfRows } = first.page;
+    const totalPages = totalCount > 0 && numOfRows > 0 ? Math.ceil(totalCount / numOfRows) : 1;
+    for (let pageNo = 2; pageNo <= totalPages; pageNo++) {
+      const page = await this._getPage(url, params, stage, pageNo);
+      if (!page.ok) return page;
+      items.push(...page.items);
+    }
+
+    return { ...first, items };
+  }
+
+  async _getPage(url, params, stage, pageNo) {
     let lastError;
     for (let attempt = 0; attempt <= this.retries; attempt++) {
-      const result = await this._attempt(url, params, stage);
+      const result = await this._attempt(url, { ...params, pageNo }, stage);
       if (result.ok || !this._isRetryable(result.code)) return result;
       lastError = result;
     }
@@ -71,7 +87,7 @@ class G2BApiClient {
         };
       }
 
-      return { ok: true, stage, items: normalizeItems(data), raw: data };
+      return { ok: true, stage, items: normalizeItems(data), page: normalizePage(data), raw: data };
     } catch (err) {
       if (err.name === 'AbortError') {
         return { ok: false, stage, code: 'TIMEOUT', message: `Request timed out after ${this.timeoutMs}ms` };
@@ -85,6 +101,15 @@ class G2BApiClient {
   _isRetryable(code) {
     return code === 'TIMEOUT' || code === 'FETCH_ERROR' || /^HTTP_5\d\d$/.test(String(code));
   }
+}
+
+function normalizePage(data) {
+  const body = data?.response?.body || data?.body || {};
+  return {
+    pageNo: Number(body.pageNo || 1),
+    numOfRows: Number(body.numOfRows || 10),
+    totalCount: Number(body.totalCount || normalizeItems(data).length),
+  };
 }
 
 function normalizeServiceKey(serviceKey) {
@@ -110,4 +135,4 @@ function normalizeItems(data) {
   return [];
 }
 
-module.exports = { G2BApiClient, normalizeItems, normalizeServiceKey };
+module.exports = { G2BApiClient, normalizeItems, normalizePage, normalizeServiceKey };

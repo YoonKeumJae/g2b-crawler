@@ -8,6 +8,9 @@ const { parseBidNumber } = require('./bidKey');
 const { G2BApiClient } = require('./g2bApiClient');
 const { lookupEnrichmentByBidNumber } = require('./enrichment');
 const { buildReportRows } = require('./reportRows');
+const { ResultStore } = require('./resultStore');
+const { restoreSearchResultsPage } = require('./searchRestore');
+const { classifyAwardStatus, inferBusinessType, inferOpeningDate, lookupAwardViaOpenApi, normalizeBidNumber } = require('./award');
 
 (async () => {
   const dateRange = config.getDateRange();
@@ -40,7 +43,13 @@ const { buildReportRows } = require('./reportRows');
 
   const writer = new ExcelWriter();
   await writer.init(config.outputPath);
+  const resultStore = new ResultStore({
+    outputPath: config.jsonOutputPath,
+    dateRange,
+    keywords,
+  });
 
+  let totalAttempted = 0;
   let totalSaved = 0;
   let apiSuccessCount = 0;
   let apiNoResultCount = 0;
@@ -69,10 +78,13 @@ const { buildReportRows } = require('./reportRows');
           console.log(`Page ${pageNum}: ${rows.length} results`);
 
           for (const row of rows) {
-            totalSaved++;
-            console.log(`[${totalSaved}] ${row.bidNumber} (row ${row.rowIndex})`);
+            totalAttempted++;
+            console.log(`[${totalAttempted}] ${row.bidNumber} (row ${row.rowIndex})`);
             try {
-              const record = await extractDetail(page, row.rowIndex);
+              const record = await extractDetail(page, row.rowIndex, {
+                attachmentDir: config.attachmentDir,
+                expectedBidNumber: row.bidNumber,
+              });
               if (!record) {
                 console.log(`  ⚠ Failed to extract details for row ${row.rowIndex}`);
                 writer.addErrorLog({
@@ -82,12 +94,17 @@ const { buildReportRows } = require('./reportRows');
                   오류코드: 'DETAIL_EMPTY',
                   오류메시지: `Failed to extract details for row ${row.rowIndex}`,
                 });
+                await restoreSearchResultsPage({ page, keyword, dateRange, pageNum });
                 continue;
               }
 
+              const downloadedAttachments = record.__attachments || [];
+              delete record.__attachments;
+
               writer.addRecord(keyword, dateRange, record);
 
-              const bidKey = parseBidNumber(record.입찰공고번호 || row.bidNumber);
+              const bidNumber = normalizeBidNumber(record.입찰공고번호 || record.공고번호 || row.bidNumber);
+              const bidKey = parseBidNumber(record.입찰공고번호 || `${bidNumber} - 000` || row.bidNumber);
               let enrichment = null;
 
               if (!bidKey) {
@@ -110,7 +127,7 @@ const { buildReportRows } = require('./reportRows');
                     status: 'API 조회 실패',
                     items: [],
                     errors: [{
-                      stage: '계약과정통합공개',
+                      stage: '계약/낙찰 API 보강',
                       code: 'UNEXPECTED_ERROR',
                       message: apiErr.message,
                     }],
@@ -123,6 +140,25 @@ const { buildReportRows } = require('./reportRows');
               reportRows.award.forEach((award) => writer.addAwardRecord(award));
               reportRows.contract.forEach((contract) => writer.addContractRecord(contract));
               reportRows.errors.forEach((error) => writer.addErrorLog(error));
+
+              const award = await lookupAwardViaOpenApi({
+                apiKey: config.dataGoKrApiKey,
+                bidNumber,
+                businessType: inferBusinessType(record),
+                openingDate: inferOpeningDate(record),
+              });
+              award.classification = classifyAwardStatus({ award, detailFields: record });
+
+              resultStore.upsertBid({
+                keyword,
+                bidNumber,
+                title: record.공고명 || '',
+                detailFields: record,
+                attachments: downloadedAttachments,
+                award,
+              });
+              resultStore.save();
+              totalSaved++;
             } catch (rowErr) {
               console.log(`  ⚠ Skipped row ${row.rowIndex}: ${rowErr.message.slice(0, 80)}`);
               writer.addErrorLog({
@@ -132,6 +168,7 @@ const { buildReportRows } = require('./reportRows');
                 오류코드: 'ROW_ERROR',
                 오류메시지: rowErr.message,
               });
+              await restoreSearchResultsPage({ page, keyword, dateRange, pageNum });
             }
           }
 
@@ -144,9 +181,11 @@ const { buildReportRows } = require('./reportRows');
       }
     }
 
+    writer.addAnalysisSheets(resultStore.toJSON());
     await writer.save();
+    resultStore.save();
     if (totalSaved > 0) {
-      console.log(`Total: ${totalSaved} records across ${keywords.length} keyword(s).`);
+      console.log(`Total: ${totalSaved} saved records (${totalAttempted} attempted) across ${keywords.length} keyword(s).`);
       console.log(`API: success=${apiSuccessCount}, noResult=${apiNoResultCount}, error=${apiErrorCount}`);
     } else {
       console.log('No records found. Empty sheets saved.');

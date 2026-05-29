@@ -1,4 +1,4 @@
-const BASE_URL = 'http://apis.data.go.kr/1230000/ao/CntrctProcssIntgOpenService';
+const BASE_URL = 'https://apis.data.go.kr/1230000/ao/CntrctProcssIntgOpenService';
 
 // 공공데이터포털 조달청_나라장터 계약과정통합공개서비스
 // https://www.data.go.kr/data/15129459/openapi.do (수정일 2026-05-15)
