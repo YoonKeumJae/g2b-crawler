@@ -32,7 +32,7 @@ async function lookupAwardByBidNumber(client, bidKey) {
     }
   }
 
-  if (errors.length === AWARD_INFO_ENDPOINTS.length) {
+  if (errors.length > 0) {
     return { status: 'API 조회 실패', items: [], errors };
   }
   return { status: '정보 없음', items: [], errors };

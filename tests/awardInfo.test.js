@@ -36,3 +36,15 @@ test('returns no information or api failure deterministically', async () => {
   await expect(lookupAwardByBidNumber(failingClient, { bidNtceNo: 'R26' }))
     .resolves.toMatchObject({ status: 'API 조회 실패', items: [] });
 });
+
+test('returns api failure when any endpoint errors and no endpoint has items', async () => {
+  const client = {
+    getJson: jest.fn()
+      .mockResolvedValueOnce(ok([]))
+      .mockResolvedValueOnce({ ok: false, stage: '낙찰정보:공사', code: '500', message: 'fail' })
+      .mockResolvedValue(ok([])),
+  };
+  const result = await lookupAwardByBidNumber(client, { bidNtceNo: 'R26' });
+  expect(result.status).toBe('API 조회 실패');
+  expect(result.errors).toHaveLength(1);
+});

@@ -27,20 +27,21 @@ const CONTRACT_HEADERS = ['입찰공고번호', '계약업체', '계약금액', 
 const ERROR_HEADERS = ['검색키워드', '입찰공고번호', '단계', '오류코드', '오류메시지'];
 
 function buildReportRows({ keyword, record = {}, bidKey, enrichment }) {
-  const first = enrichment?.items?.[0] || {};
-  const award = pickAward(first);
-  const contract = pickContract(first);
   const awardRows = [];
   const contractRows = [];
+  let award = emptyAward();
+  let contract = emptyContract();
 
   for (const item of enrichment?.items || []) {
     const itemAward = pickAward(item);
     if (itemAward.company || itemAward.amount) {
+      if (!award.company && !award.amount) award = itemAward;
       awardRows.push(awardRow(bidKey, itemAward, enrichment, item));
     }
 
     const itemContract = pickContract(item);
     if (itemContract.company || itemContract.amount) {
+      if (!contract.company && !contract.amount) contract = itemContract;
       contractRows.push(contractRow(bidKey, itemContract, enrichment, item));
     }
   }
@@ -58,11 +59,11 @@ function buildReportRows({ keyword, record = {}, bidKey, enrichment }) {
   integrated.추정가격 = value(record.추정가격);
   integrated.사전규격등록번호 = value(record.사전규격등록번호);
   integrated.발주계획번호 = value(record.발주계획번호);
-  integrated.낙찰상태 = award.company ? '확인' : '';
+  integrated.낙찰상태 = award.company || award.amount ? '확인' : '';
   integrated.낙찰업체 = award.company;
   integrated.낙찰금액 = award.amount;
   integrated.낙찰률 = award.rate;
-  integrated.계약상태 = contract.company ? '확인' : '';
+  integrated.계약상태 = contract.company || contract.amount ? '확인' : '';
   integrated.계약업체 = contract.company;
   integrated.계약금액 = contract.amount;
   integrated.계약일자 = contract.date;
@@ -99,6 +100,10 @@ function pickAward(item) {
   };
 }
 
+function emptyAward() {
+  return { company: '', amount: '', rate: '' };
+}
+
 function pickContract(item) {
   const start = firstOf(item, ['cntrctBeginDate', 'cntrctPrdBeginDate', '계약시작일']);
   const end = firstOf(item, ['cntrctEndDate', 'cntrctPrdEndDate', '계약종료일']);
@@ -108,6 +113,10 @@ function pickContract(item) {
     date: value(firstOf(item, ['cntrctDate', 'cntrctCnclsDate', '계약일자'])),
     period: start || end ? `${value(start)} ~ ${value(end)}` : value(firstOf(item, ['cntrctPrd', '계약기간'])),
   };
+}
+
+function emptyContract() {
+  return { company: '', amount: '', date: '', period: '' };
 }
 
 function awardRow(bidKey, award, enrichment, raw) {

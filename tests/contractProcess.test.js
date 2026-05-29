@@ -39,3 +39,15 @@ test('returns api failure when every endpoint errors', async () => {
   expect(result.status).toBe('API 조회 실패');
   expect(result.errors).toHaveLength(4);
 });
+
+test('returns api failure when any endpoint errors and no endpoint has items', async () => {
+  const client = {
+    getJson: jest.fn()
+      .mockResolvedValueOnce(ok([]))
+      .mockResolvedValueOnce({ ok: false, stage: '계약과정통합공개:용역', code: '500', message: 'fail' })
+      .mockResolvedValue(ok([])),
+  };
+  const result = await lookupByBidNumber(client, { bidNtceNo: 'R26', bidNtceOrd: '000' });
+  expect(result.status).toBe('API 조회 실패');
+  expect(result.errors).toHaveLength(1);
+});

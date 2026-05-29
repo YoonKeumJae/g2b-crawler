@@ -33,7 +33,7 @@ async function lookupByBidNumber(client, bidKey) {
     }
   }
 
-  if (errors.length === CONTRACT_PROCESS_ENDPOINTS.length) {
+  if (errors.length > 0) {
     return { status: 'API 조회 실패', items: [], errors };
   }
   return { status: '정보 없음', items: [], errors };

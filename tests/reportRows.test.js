@@ -39,6 +39,41 @@ test('builds detail rows from every enrichment item while summary uses first ite
   expect(rows.award.map((row) => row.낙찰업체)).toEqual(['낙찰사1', '낙찰사2']);
 });
 
+test('summary uses first item that has reportable fields', () => {
+  const rows = buildReportRows({
+    keyword: 'ees',
+    record: { 입찰공고번호: 'R26 - 000' },
+    bidKey: { bidNtceNo: 'R26', bidNtceOrd: '000', normalized: 'R26-000' },
+    enrichment: {
+      status: '확인',
+      items: [
+        { bidNtceNo: 'R26' },
+        { sucsfbidEntrpsNm: '낙찰사2', sucsfbidAmt: '950' },
+      ],
+    },
+  });
+  expect(rows.integrated).toMatchObject({
+    리포트상태: '낙찰 확인',
+    낙찰상태: '확인',
+    낙찰업체: '낙찰사2',
+    낙찰금액: '950',
+  });
+});
+
+test('sets status fields when only amount is present', () => {
+  const rows = buildReportRows({
+    keyword: 'ees',
+    record: { 입찰공고번호: 'R26 - 000' },
+    bidKey: { bidNtceNo: 'R26', bidNtceOrd: '000', normalized: 'R26-000' },
+    enrichment: { status: '확인', items: [{ sucsfbidAmt: '900' }] },
+  });
+  expect(rows.integrated).toMatchObject({
+    리포트상태: '낙찰 확인',
+    낙찰상태: '확인',
+    낙찰금액: '900',
+  });
+});
+
 test('marks api failure and missing bid number deterministically', () => {
   expect(buildReportRows({
     keyword: 'ees',
