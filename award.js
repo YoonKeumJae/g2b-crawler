@@ -63,7 +63,16 @@ async function lookupAwardViaOpenApi({
       };
     }
 
-    const data = JSON.parse(await response.text());
+    let data;
+    try {
+      data = JSON.parse(await response.text());
+    } catch (err) {
+      return {
+        source: 'data.go.kr',
+        status: 'lookup_failed',
+        error: `Invalid JSON response: ${err.message}`,
+      };
+    }
     const responseData = data.response || data['nkoneps.com.response.ResponseError'];
     const resultCode = responseData?.header?.resultCode;
     if (resultCode && resultCode !== '00') {
@@ -145,21 +154,6 @@ function normalizeItems(items) {
   return [];
 }
 
-function toBusinessCode(value) {
-  const normalized = String(value || '').trim();
-  const map = {
-    '1': '1',
-    '2': '2',
-    '3': '3',
-    '5': '5',
-    물품: '1',
-    외자: '2',
-    공사: '3',
-    용역: '5',
-  };
-  return map[normalized] || normalized || '1';
-}
-
 function normalizeBusinessType(value) {
   const normalized = String(value || '').trim();
   const map = {
@@ -177,12 +171,27 @@ function normalizeBusinessType(value) {
 
 function oneWeekWindow(yyyymmdd) {
   if (!yyyymmdd) {
-    const today = new Date();
+    const today = calendarDateFromKst(new Date());
     return { from: fmtDate(addDays(today, -6)), to: fmtDate(today) };
   }
 
-  const date = new Date(`${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6, 8)}T00:00:00+09:00`);
+  const date = new Date(Date.UTC(
+    Number(yyyymmdd.slice(0, 4)),
+    Number(yyyymmdd.slice(4, 6)) - 1,
+    Number(yyyymmdd.slice(6, 8)),
+  ));
   return { from: fmtDate(addDays(date, -3)), to: fmtDate(addDays(date, 3)) };
+}
+
+function calendarDateFromKst(date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return new Date(Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day)));
 }
 
 function addDays(date, days) {
@@ -192,7 +201,10 @@ function addDays(date, days) {
 }
 
 function fmtDate(date) {
-  return date.toISOString().slice(0, 10).replace(/-/g, '');
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}${month}${day}`;
 }
 
 module.exports = {

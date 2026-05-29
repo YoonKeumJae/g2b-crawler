@@ -33,6 +33,7 @@ const { classifyAwardStatus, inferBusinessType, inferOpeningDate, lookupAwardVia
     keywords,
   });
 
+  let totalAttempted = 0;
   let totalSaved = 0;
 
   try {
@@ -58,8 +59,8 @@ const { classifyAwardStatus, inferBusinessType, inferOpeningDate, lookupAwardVia
           console.log(`Page ${pageNum}: ${rows.length} results`);
 
           for (const row of rows) {
-            totalSaved++;
-            console.log(`[${totalSaved}] ${row.bidNumber} (row ${row.rowIndex})`);
+            totalAttempted++;
+            console.log(`[${totalAttempted}] ${row.bidNumber} (row ${row.rowIndex})`);
             try {
               const record = await extractDetail(page, row.rowIndex, {
                 attachmentDir: config.attachmentDir,
@@ -88,6 +89,7 @@ const { classifyAwardStatus, inferBusinessType, inferOpeningDate, lookupAwardVia
                   award,
                 });
                 resultStore.save();
+                totalSaved++;
               } else {
                 console.log(`  ⚠ Failed to extract details for row ${row.rowIndex}`);
                 await restoreSearchResultsPage({ page, keyword, dateRange, pageNum });
@@ -111,7 +113,7 @@ const { classifyAwardStatus, inferBusinessType, inferOpeningDate, lookupAwardVia
     await writer.save();
     resultStore.save();
     if (totalSaved > 0) {
-      console.log(`Total: ${totalSaved} records across ${keywords.length} keyword(s).`);
+      console.log(`Total: ${totalSaved} saved records (${totalAttempted} attempted) across ${keywords.length} keyword(s).`);
     } else {
       console.log('No records found. Empty sheets saved.');
     }

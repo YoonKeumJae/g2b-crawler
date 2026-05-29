@@ -87,6 +87,49 @@ test('lookupAwardViaOpenApi returns the matching award from data.go.kr response'
   expect(fetchImpl).toHaveBeenCalledTimes(1);
 });
 
+test('lookupAwardViaOpenApi uses the intended KST calendar window', async () => {
+  const fetchImpl = jest.fn(async (url) => {
+    expect(url.searchParams.get('inqryBgnDt')).toBe('202604280000');
+    expect(url.searchParams.get('inqryEndDt')).toBe('202605042359');
+    return {
+      ok: true,
+      status: 200,
+      async text() {
+        return JSON.stringify({ response: { header: { resultCode: '00' }, body: { items: [] } } });
+      },
+    };
+  });
+
+  await lookupAwardViaOpenApi({
+    apiKey: 'test-key',
+    bidNumber: 'R26BK00000001',
+    openingDate: '20260501',
+    fetchImpl,
+  });
+
+  expect(fetchImpl).toHaveBeenCalled();
+});
+
+test('lookupAwardViaOpenApi returns lookup_failed for non-json API responses', async () => {
+  const fetchImpl = jest.fn(async () => ({
+    ok: true,
+    status: 200,
+    async text() {
+      return '<html>SERVICE ERROR</html>';
+    },
+  }));
+
+  await expect(lookupAwardViaOpenApi({
+    apiKey: 'test-key',
+    bidNumber: 'R26BK00000001',
+    fetchImpl,
+  })).resolves.toMatchObject({
+    source: 'data.go.kr',
+    status: 'lookup_failed',
+    error: expect.stringContaining('Invalid JSON response'),
+  });
+});
+
 test('normalizes G2B bid number values that include order suffixes', () => {
   expect(normalizeBidNumber('R26BK00000001 - 000')).toBe('R26BK00000001');
 });
