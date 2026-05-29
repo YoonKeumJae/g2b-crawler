@@ -13,6 +13,54 @@
  */
 const { downloadAttachments, extractAttachments } = require('./attachment');
 
+const DETAIL_DEFAULTS = {
+  clickTimeoutMs: 7000,
+  detailLoadTimeoutMs: 12000,
+  listReturnTimeoutMs: 10000,
+  maxRetries: 1,
+  minFieldCount: 30,
+  playwrightDefaultTimeoutMs: 30000,
+};
+
+function buildDetailOptions(options = {}) {
+  return {
+    ...DETAIL_DEFAULTS,
+    ...options,
+  };
+}
+
+function normalizeBidNumberForCompare(value = '') {
+  const text = String(value).trim();
+  const match = text.match(/[A-Z]\d{2}[A-Z]{2}\d{8}/);
+  return match ? match[0] : text.replace(/\s*-\s*\d+$/, '').trim();
+}
+
+function isLikelyCompleteDetail(fields, options = {}) {
+  const detailOptions = buildDetailOptions(options);
+  const fieldCount = Object.keys(fields || {}).filter(key => !key.startsWith('__')).length;
+  if (fieldCount < detailOptions.minFieldCount) return false;
+
+  const expectedBidNumber = normalizeBidNumberForCompare(detailOptions.expectedBidNumber || '');
+  if (!expectedBidNumber) return true;
+
+  const actualBidNumber = normalizeBidNumberForCompare(fields.입찰공고번호 || fields.공고번호 || '');
+  return !actualBidNumber || actualBidNumber === expectedBidNumber;
+}
+
+async function waitForListRow(page, selector, timeout) {
+  try {
+    await page.locator(selector).waitFor({ state: 'visible', timeout });
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function returnToResultList(page, timeout) {
+  try { await page.goBack({ waitUntil: 'domcontentloaded', timeout }); } catch (_) {}
+  try { await page.waitForSelector('#mf_wfm_container_testTable', { timeout }); } catch (_) {}
+}
+
 async function extractFields(page) {
   return await page.evaluate(() => {
     // Find the detail content container - excludes the search form
@@ -57,58 +105,65 @@ async function extractFields(page) {
  * @returns {Promise<Object|null>}
  */
 async function extractDetail(page, rowIndex, options = {}) {
+  const detailOptions = buildDetailOptions(options);
   const selector = `#mf_wfm_container_grdTotalSrch_${rowIndex}_untyTitleTd`;
-  const MAX_RETRIES = 2;
 
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+  for (let attempt = 0; attempt <= detailOptions.maxRetries; attempt++) {
     if (attempt > 0) {
       console.log(`[detail] ↺ Retry ${attempt} for row ${rowIndex}...`);
-      try { await page.goBack({ waitUntil: 'domcontentloaded', timeout: 15000 }); } catch (_) {}
-      try { await page.waitForSelector('#mf_wfm_container_testTable', { timeout: 15000 }); } catch (_) {}
-      await page.waitForTimeout(2000);
+      await returnToResultList(page, detailOptions.listReturnTimeoutMs);
+      await page.waitForTimeout(800);
     }
 
     try {
       console.log(`[detail] Clicking row ${rowIndex}...`);
+
+      const rowVisible = await waitForListRow(page, selector, detailOptions.clickTimeoutMs);
+      if (!rowVisible) {
+        throw new Error(`result row selector not visible within ${detailOptions.clickTimeoutMs}ms: ${selector}`);
+      }
 
       // Set up response waiter before click (race condition prevention)
       let responsePromise;
       try {
         responsePromise = page.waitForResponse(
           r => r.url().includes('selectItemAnncMngV.do') && r.status() === 200,
-          { timeout: 20000 }
+          { timeout: detailOptions.detailLoadTimeoutMs }
         ).catch(() => null);
       } catch (_) {
         responsePromise = Promise.resolve();
       }
 
-      await page.click(selector, { force: true });
+      await page.locator(selector).click({ force: true, timeout: detailOptions.clickTimeoutMs });
 
       // Wait for response OR for detail container to appear (whichever first)
       await Promise.race([
         responsePromise,
-        page.waitForSelector('[id*="bidPbancWfrm_mainContents"]', { timeout: 20000 }),
+        page.waitForSelector('[id*="bidPbancWfrm_mainContents"]', { timeout: detailOptions.detailLoadTimeoutMs }),
       ]);
       await page.waitForTimeout(1500);
 
       const fields = await extractFields(page);
       const fieldCount = Object.keys(fields).length;
+      if (!isLikelyCompleteDetail(fields, detailOptions)) {
+        throw new Error(`incomplete detail extraction (${fieldCount} fields)`);
+      }
+
       const attachments = await extractAttachments(page, fields.입찰공고번호 || fields.공고번호 || '');
       fields.__attachments = options.attachmentDir
         ? await downloadAttachments(page, attachments, options.attachmentDir)
         : attachments;
       console.log(`[detail] ✓ Extracted ${fieldCount} fields`);
 
-      await page.goBack({ waitUntil: 'domcontentloaded' });
-      await page.waitForSelector('#mf_wfm_container_testTable', { timeout: 20000 });
-      await page.waitForSelector(selector, { timeout: 20000 });
+      await returnToResultList(page, detailOptions.listReturnTimeoutMs);
       await page.waitForTimeout(1000);
 
       return fieldCount > 0 ? fields : null;
     } catch (err) {
       console.log(`[detail] ⚠ Attempt ${attempt} failed: ${err.message.slice(0, 80)}`);
-      if (attempt >= MAX_RETRIES) {
+      if (attempt >= detailOptions.maxRetries) {
         console.log(`[detail] ✗ All retries exhausted for row ${rowIndex}`);
+        await returnToResultList(page, detailOptions.listReturnTimeoutMs);
         return null;
       }
     }
@@ -116,4 +171,9 @@ async function extractDetail(page, rowIndex, options = {}) {
   return null;
 }
 
-module.exports = { extractDetail };
+module.exports = {
+  DETAIL_DEFAULTS,
+  buildDetailOptions,
+  extractDetail,
+  isLikelyCompleteDetail,
+};

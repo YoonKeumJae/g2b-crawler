@@ -5,6 +5,7 @@ const { collectCurrentPageRows, goToNextPage } = require('./paginator');
 const { extractDetail } = require('./detail');
 const { ExcelWriter } = require('./writer');
 const { ResultStore } = require('./resultStore');
+const { restoreSearchResultsPage } = require('./searchRestore');
 const { classifyAwardStatus, inferBusinessType, inferOpeningDate, lookupAwardViaOpenApi, normalizeBidNumber } = require('./award');
 
 (async () => {
@@ -60,7 +61,10 @@ const { classifyAwardStatus, inferBusinessType, inferOpeningDate, lookupAwardVia
             totalSaved++;
             console.log(`[${totalSaved}] ${row.bidNumber} (row ${row.rowIndex})`);
             try {
-              const record = await extractDetail(page, row.rowIndex, { attachmentDir: config.attachmentDir });
+              const record = await extractDetail(page, row.rowIndex, {
+                attachmentDir: config.attachmentDir,
+                expectedBidNumber: row.bidNumber,
+              });
               if (record) {
                 const downloadedAttachments = record.__attachments || [];
                 delete record.__attachments;
@@ -86,9 +90,11 @@ const { classifyAwardStatus, inferBusinessType, inferOpeningDate, lookupAwardVia
                 resultStore.save();
               } else {
                 console.log(`  ⚠ Failed to extract details for row ${row.rowIndex}`);
+                await restoreSearchResultsPage({ page, keyword, dateRange, pageNum });
               }
             } catch (rowErr) {
               console.log(`  ⚠ Skipped row ${row.rowIndex}: ${rowErr.message.slice(0, 80)}`);
+              await restoreSearchResultsPage({ page, keyword, dateRange, pageNum });
             }
           }
 
