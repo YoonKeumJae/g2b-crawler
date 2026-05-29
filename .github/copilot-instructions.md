@@ -28,7 +28,10 @@ npx jest tests/writer.test.js
 - **search.js**: Navigates g2b.go.kr, fills the search form with config, and submits queries
 - **paginator.js**: Collects all detail URLs across paginated result pages
 - **detail.js**: Extracts all th→td field pairs from a detail page into structured data
-- **writer.js**: Incremental CSV writer; exports write() and reset() functions
+- **attachment.js**: Extracts, classifies, and downloads RFP/spec/SOW attachments
+- **award.js**: Looks up successful bid data through the data.go.kr G2B open API
+- **resultStore.js**: Saves structured crawl output to JSON for resumable analysis
+- **writer.js**: Excel report writer; creates keyword detail sheets plus Summary, Attachments, and Awards
 
 ## Key Conventions
 
@@ -42,4 +45,8 @@ npx jest tests/writer.test.js
 
 ## Configuration
 
-<!-- Document config file format and key settings once established -->
+- `keywords`: 공고명 검색 키워드 배열
+- `outputPath`: Excel 리포트 경로
+- `jsonOutputPath`: 구조화 JSON 원본 경로
+- `attachmentDir`: 첨부파일 다운로드 디렉터리
+- `DATA_GO_KR_API_KEY`: 낙찰정보 조회용 공공데이터포털 API 키

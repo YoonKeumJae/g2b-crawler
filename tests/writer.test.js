@@ -1,44 +1,63 @@
 const fs = require('fs');
-const path = require('path');
 const os = require('os');
-const { write, reset } = require('../writer');
+const path = require('path');
+const ExcelJS = require('exceljs');
+const { ExcelWriter } = require('../writer');
 
-let tmpFile;
+let tmpDir;
+let outputPath;
 
 beforeEach(() => {
-  tmpFile = path.join(os.tmpdir(), `test-${Date.now()}.csv`);
-  reset();
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'crawler-writer-'));
+  outputPath = path.join(tmpDir, 'results.xlsx');
 });
 
 afterEach(() => {
-  if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
+  fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-test('creates CSV with header on first write', () => {
-  write(tmpFile, { 공고번호: 'A001', 공고명: '테스트' });
-  const lines = fs.readFileSync(tmpFile, 'utf8').trim().split('\n');
-  expect(lines[0]).toBe('공고번호,공고명');
-  expect(lines[1]).toBe('"A001","테스트"');
-});
+test('writes keyword detail sheet and analysis sheets to xlsx', async () => {
+  const writer = new ExcelWriter();
+  await writer.init(outputPath);
 
-test('appends rows without rewriting header', () => {
-  write(tmpFile, { 공고번호: 'A001', 공고명: '첫번째' });
-  write(tmpFile, { 공고번호: 'A002', 공고명: '두번째' });
-  const lines = fs.readFileSync(tmpFile, 'utf8').trim().split('\n');
-  expect(lines).toHaveLength(3);
-  expect(lines[2]).toBe('"A002","두번째"');
-});
+  writer.prepareSheet('ees', { from: '20260101', to: '20260601' });
+  writer.addRecord('ees', { from: '20260101', to: '20260601' }, {
+    입찰공고번호: 'R26BK00000001',
+    공고명: '테스트 공고',
+    공고기관: '테스트 기관',
+  });
+  writer.addAnalysisSheets({
+    bids: [
+      {
+        keyword: 'ees',
+        bidNumber: 'R26BK00000001',
+        title: '테스트 공고',
+        detailFields: { 공고기관: '테스트 기관' },
+        attachments: [{ fileName: '제안요청서.pdf', kind: 'RFP', localPath: '/tmp/제안요청서.pdf' }],
+        award: { status: '개찰완료', classification: 'awarded', winnerName: '낙찰 주식회사', awardAmount: '1000000' },
+      },
+      {
+        keyword: 'ees',
+        bidNumber: 'R26BK00000002',
+        title: '두번째 공고',
+        detailFields: {},
+        attachments: [],
+        award: { status: '낙찰', classification: 'awarded', winnerName: '낙찰 주식회사', awardAmount: '2000000' },
+      },
+    ],
+  });
+  await writer.save();
 
-test('creates output directory if it does not exist', () => {
-  const nestedPath = path.join(os.tmpdir(), `nested-${Date.now()}`, 'out.csv');
-  write(nestedPath, { 공고번호: 'X001' });
-  expect(fs.existsSync(nestedPath)).toBe(true);
-  fs.unlinkSync(nestedPath);
-  fs.rmdirSync(path.dirname(nestedPath));
-});
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(outputPath);
 
-test('escapes double quotes in values', () => {
-  write(tmpFile, { 공고명: 'say "hello"' });
-  const lines = fs.readFileSync(tmpFile, 'utf8').trim().split('\n');
-  expect(lines[1]).toBe('"say ""hello"""');
+  expect(workbook.getWorksheet('ees')).toBeTruthy();
+  expect(workbook.getWorksheet('Summary').getCell('B2').value).toBe('R26BK00000001');
+  expect(workbook.getWorksheet('Attachments').getCell('C2').value).toBe('제안요청서.pdf');
+  expect(workbook.getWorksheet('Awards').getCell('D2').value).toBe('awarded');
+  expect(workbook.getWorksheet('Awards').getCell('E2').value).toBe('낙찰 주식회사');
+  expect(workbook.getWorksheet('Vendor Summary')).toBeTruthy();
+  expect(workbook.getWorksheet('Vendor Summary').getCell('A2').value).toBe('낙찰 주식회사');
+  expect(workbook.getWorksheet('Vendor Summary').getCell('B2').value).toBe(2);
+  expect(workbook.getWorksheet('Vendor Summary').getCell('C2').value).toBe(3000000);
 });

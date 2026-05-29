@@ -4,6 +4,9 @@ const { search } = require('./search');
 const { collectCurrentPageRows, goToNextPage } = require('./paginator');
 const { extractDetail } = require('./detail');
 const { ExcelWriter } = require('./writer');
+const { ResultStore } = require('./resultStore');
+const { restoreSearchResultsPage } = require('./searchRestore');
+const { classifyAwardStatus, inferBusinessType, inferOpeningDate, lookupAwardViaOpenApi, normalizeBidNumber } = require('./award');
 
 (async () => {
   const dateRange = config.getDateRange();
@@ -24,7 +27,13 @@ const { ExcelWriter } = require('./writer');
 
   const writer = new ExcelWriter();
   await writer.init(config.outputPath);
+  const resultStore = new ResultStore({
+    outputPath: config.jsonOutputPath,
+    dateRange,
+    keywords,
+  });
 
+  let totalAttempted = 0;
   let totalSaved = 0;
 
   try {
@@ -50,14 +59,44 @@ const { ExcelWriter } = require('./writer');
           console.log(`Page ${pageNum}: ${rows.length} results`);
 
           for (const row of rows) {
-            totalSaved++;
-            console.log(`[${totalSaved}] ${row.bidNumber} (row ${row.rowIndex})`);
+            totalAttempted++;
+            console.log(`[${totalAttempted}] ${row.bidNumber} (row ${row.rowIndex})`);
             try {
-              const record = await extractDetail(page, row.rowIndex);
-              if (record) writer.addRecord(keyword, dateRange, record);
-              else console.log(`  ⚠ Failed to extract details for row ${row.rowIndex}`);
+              const record = await extractDetail(page, row.rowIndex, {
+                attachmentDir: config.attachmentDir,
+                expectedBidNumber: row.bidNumber,
+              });
+              if (record) {
+                const downloadedAttachments = record.__attachments || [];
+                delete record.__attachments;
+
+                const bidNumber = normalizeBidNumber(record.입찰공고번호 || record.공고번호 || row.bidNumber);
+                const award = await lookupAwardViaOpenApi({
+                  apiKey: config.dataGoKrApiKey,
+                  bidNumber,
+                  businessType: inferBusinessType(record),
+                  openingDate: inferOpeningDate(record),
+                });
+                award.classification = classifyAwardStatus({ award, detailFields: record });
+
+                writer.addRecord(keyword, dateRange, record);
+                resultStore.upsertBid({
+                  keyword,
+                  bidNumber,
+                  title: record.공고명 || '',
+                  detailFields: record,
+                  attachments: downloadedAttachments,
+                  award,
+                });
+                resultStore.save();
+                totalSaved++;
+              } else {
+                console.log(`  ⚠ Failed to extract details for row ${row.rowIndex}`);
+                await restoreSearchResultsPage({ page, keyword, dateRange, pageNum });
+              }
             } catch (rowErr) {
               console.log(`  ⚠ Skipped row ${row.rowIndex}: ${rowErr.message.slice(0, 80)}`);
+              await restoreSearchResultsPage({ page, keyword, dateRange, pageNum });
             }
           }
 
@@ -70,9 +109,11 @@ const { ExcelWriter } = require('./writer');
       }
     }
 
+    writer.addAnalysisSheets(resultStore.toJSON());
     await writer.save();
+    resultStore.save();
     if (totalSaved > 0) {
-      console.log(`Total: ${totalSaved} records across ${keywords.length} keyword(s).`);
+      console.log(`Total: ${totalSaved} saved records (${totalAttempted} attempted) across ${keywords.length} keyword(s).`);
     } else {
       console.log('No records found. Empty sheets saved.');
     }
