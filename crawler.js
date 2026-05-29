@@ -10,7 +10,8 @@ const { lookupEnrichmentByBidNumber } = require('./enrichment');
 const { buildReportRows } = require('./reportRows');
 const { ResultStore } = require('./resultStore');
 const { restoreSearchResultsPage } = require('./searchRestore');
-const { classifyAwardStatus, inferBusinessType, inferOpeningDate, lookupAwardViaOpenApi, normalizeBidNumber } = require('./award');
+const { normalizeBidNumber } = require('./award');
+const { lookupAwardForResultStore } = require('./awardLookup');
 
 (async () => {
   const dateRange = config.getDateRange();
@@ -145,13 +146,11 @@ const { classifyAwardStatus, inferBusinessType, inferOpeningDate, lookupAwardVia
               reportRows.contract.forEach((contract) => writer.addContractRecord(contract));
               reportRows.errors.forEach((error) => writer.addErrorLog(error));
 
-              const award = await lookupAwardViaOpenApi({
+              const award = await lookupAwardForResultStore({
                 apiKey: config.dataGoKrApiKey,
                 bidNumber,
-                businessType: inferBusinessType(record),
-                openingDate: inferOpeningDate(record),
+                record,
               });
-              award.classification = classifyAwardStatus({ award, detailFields: record });
 
               resultStore.upsertBid({
                 keyword,
