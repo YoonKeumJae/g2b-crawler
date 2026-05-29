@@ -25,6 +25,10 @@ async function lookupEnrichmentByBidNumber(client, bidKey) {
     return { status: 'API 조회 실패', items: [], errors };
   }
 
+  if (contractResult.status === '정보 없음' && awardResult.status === 'API 조회 실패') {
+    return { status: 'API 조회 실패', items: [], errors };
+  }
+
   return { status: '정보 없음', items: [], errors };
 }
 

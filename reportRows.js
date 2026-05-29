@@ -30,6 +30,20 @@ function buildReportRows({ keyword, record = {}, bidKey, enrichment }) {
   const first = enrichment?.items?.[0] || {};
   const award = pickAward(first);
   const contract = pickContract(first);
+  const awardRows = [];
+  const contractRows = [];
+
+  for (const item of enrichment?.items || []) {
+    const itemAward = pickAward(item);
+    if (itemAward.company || itemAward.amount) {
+      awardRows.push(awardRow(bidKey, itemAward, enrichment, item));
+    }
+
+    const itemContract = pickContract(item);
+    if (itemContract.company || itemContract.amount) {
+      contractRows.push(contractRow(bidKey, itemContract, enrichment, item));
+    }
+  }
 
   const integrated = {};
   INTEGRATED_HEADERS.forEach((header) => { integrated[header] = ''; });
@@ -57,8 +71,8 @@ function buildReportRows({ keyword, record = {}, bidKey, enrichment }) {
 
   return {
     integrated,
-    award: award.company || award.amount ? [awardRow(bidKey, award, enrichment, first)] : [],
-    contract: contract.company || contract.amount ? [contractRow(bidKey, contract, enrichment, first)] : [],
+    award: awardRows,
+    contract: contractRows,
     errors: (enrichment?.errors || []).map((error) => ({
       검색키워드: value(keyword),
       입찰공고번호: value(bidKey?.bidNtceNo || record.입찰공고번호),

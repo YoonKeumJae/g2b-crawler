@@ -74,3 +74,19 @@ test('deduplicates long keyword sheet names within Excel length limit', async ()
   expect(new Set(names).size).toBe(2);
   expect(names.every((name) => name.length <= 31)).toBe(true);
 });
+
+test('reserves fixed report sheet names before keyword sheets are created', async () => {
+  const writer = new ExcelWriter();
+  await writer.init(tmpFile);
+  writer.addRecord('통합리포트', { from: '20260101', to: '20260630' }, {
+    입찰공고번호: 'R26BK01514945 - 000',
+  });
+  writer.addIntegratedRecord({ 검색키워드: '통합리포트', 입찰공고번호: 'R26', 리포트상태: '공고만 확인' });
+  await writer.save();
+
+  const workbook = await readWorkbook();
+  expect(workbook.getWorksheet('통합리포트')).toBeDefined();
+  expect(workbook.getWorksheet('통합리포트_1')).toBeDefined();
+  expect(workbook.getWorksheet('통합리포트').getCell('A1').value).toBe('검색키워드');
+  expect(workbook.getWorksheet('통합리포트_1').getCell('C4').value).toBe('R26BK01514945 - 000');
+});

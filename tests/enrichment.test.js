@@ -38,3 +38,15 @@ test('keeps errors from both services when fallback also fails', async () => {
   expect(result.status).toBe('API 조회 실패');
   expect(result.errors).toHaveLength(2);
 });
+
+test('treats award service failure as api failure when contract has no data', async () => {
+  lookupByBidNumber.mockResolvedValue({ status: '정보 없음', items: [], errors: [] });
+  lookupAwardByBidNumber.mockResolvedValue({
+    status: 'API 조회 실패',
+    items: [],
+    errors: [{ stage: '낙찰', code: '500', message: 'fail' }],
+  });
+  const result = await lookupEnrichmentByBidNumber({}, { bidNtceNo: 'R26' });
+  expect(result.status).toBe('API 조회 실패');
+  expect(result.errors).toHaveLength(1);
+});

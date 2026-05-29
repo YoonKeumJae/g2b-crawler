@@ -42,11 +42,17 @@ module.exports = {
 };
 ```
 
-API 키는 파일에 저장하지 않고 환경변수로만 전달합니다. 공공데이터포털의 Encoding 인증키와 Decoding 인증키 모두 사용할 수 있으며, 내부에서 한 번만 URL 인코딩되도록 정규화합니다.
+API 키는 커밋하거나 `config.js`에 하드코딩하지 않습니다. 로컬 실행에서는 환경변수 또는 git에서 제외된 `.env` 파일로 전달할 수 있습니다. 공공데이터포털의 Encoding 인증키와 Decoding 인증키 모두 사용할 수 있으며, 내부에서 한 번만 URL 인코딩되도록 정규화합니다.
 
 ```bash
 export DATA_GO_KR_SERVICE_KEY='공공데이터포털_서비스키'
 npm start
+```
+
+또는 로컬 `.env`에 다음처럼 저장합니다.
+
+```bash
+DATA_GO_KR_SERVICE_KEY='공공데이터포털_서비스키'
 ```
 
 `DATA_GO_KR_SERVICE_KEY`가 없으면 낙찰/계약 보강을 할 수 없으므로 크롤러가 시작 전에 명확한 오류 메시지로 중단합니다.

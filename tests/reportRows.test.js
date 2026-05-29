@@ -22,6 +22,23 @@ test('marks award confirmed when only award fields exist', () => {
   expect(rows.award).toHaveLength(1);
 });
 
+test('builds detail rows from every enrichment item while summary uses first item', () => {
+  const rows = buildReportRows({
+    keyword: 'ees',
+    record: { 입찰공고번호: 'R26 - 000' },
+    bidKey: { bidNtceNo: 'R26', bidNtceOrd: '000', normalized: 'R26-000' },
+    enrichment: {
+      status: '확인',
+      items: [
+        { sucsfbidEntrpsNm: '낙찰사1', sucsfbidAmt: '900' },
+        { sucsfbidEntrpsNm: '낙찰사2', sucsfbidAmt: '950' },
+      ],
+    },
+  });
+  expect(rows.integrated.낙찰업체).toBe('낙찰사1');
+  expect(rows.award.map((row) => row.낙찰업체)).toEqual(['낙찰사1', '낙찰사2']);
+});
+
 test('marks api failure and missing bid number deterministically', () => {
   expect(buildReportRows({
     keyword: 'ees',

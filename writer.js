@@ -27,7 +27,7 @@ class ExcelWriter {
     this.columnMap = {};  // header text → column index (1-based)
     this.sheets = {};     // keyword → { sheet, nextRow }
     this.extraSheets = {};
-    this.usedSheetNames = new Set();
+    this.usedSheetNames = new Set(FIXED_SHEET_NAMES);
     this.outputPath = null;
   }
 
@@ -164,5 +164,7 @@ class ExcelWriter {
     console.log(`\nSaved ${this.outputPath}`);
   }
 }
+
+const FIXED_SHEET_NAMES = ['통합리포트', '낙찰정보', '계약정보', '오류로그'];
 
 module.exports = { ExcelWriter };
