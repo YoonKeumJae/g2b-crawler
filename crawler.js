@@ -4,7 +4,7 @@ const { search } = require('./search');
 const { collectCurrentPageRows, goToNextPage } = require('./paginator');
 const { extractDetail } = require('./detail');
 const { ExcelWriter } = require('./writer');
-const { parseBidNumber } = require('./bidKey');
+const { resolveBidKey } = require('./bidKeyResolver');
 const { G2BApiClient } = require('./g2bApiClient');
 const { lookupEnrichmentByBidNumber } = require('./enrichment');
 const { buildReportRows } = require('./reportRows');
@@ -104,7 +104,11 @@ const { classifyAwardStatus, inferBusinessType, inferOpeningDate, lookupAwardVia
               writer.addRecord(keyword, dateRange, record);
 
               const bidNumber = normalizeBidNumber(record.입찰공고번호 || record.공고번호 || row.bidNumber);
-              const bidKey = parseBidNumber(record.입찰공고번호 || `${bidNumber} - 000` || row.bidNumber);
+              const bidKey = resolveBidKey({
+                rawBidNumber: record.입찰공고번호,
+                normalizedBidNumber: bidNumber,
+                rowBidNumber: row.bidNumber,
+              });
               let enrichment = null;
 
               if (!bidKey) {

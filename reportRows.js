@@ -94,9 +94,9 @@ function getReportStatus({ bidKey, enrichment, award, contract }) {
 
 function pickAward(item) {
   return {
-    company: value(firstOf(item, ['sucsfbidEntrpsNm', 'sucsfbidCorpNm', 'sucsfbidderNm', '낙찰업체'])),
-    amount: value(firstOf(item, ['sucsfbidAmt', 'sucsfbidPrice', '낙찰금액'])),
-    rate: value(firstOf(item, ['sucsfbidRate', 'bidRate', '낙찰률'])),
+    company: value(firstOf(item, ['sucsfbidEntrpsNm', 'sucsfbidCorpNm', 'sucsfbidderNm', 'fnlSucsfCorpNm', 'bidprcCorpNm', 'bidwinnrNm', '낙찰업체'])),
+    amount: value(firstOf(item, ['sucsfbidAmt', 'sucsfbidPrice', 'fnlSucsfAmt', 'bidprcAmt', '낙찰금액'])),
+    rate: value(firstOf(item, ['sucsfbidRate', 'bidRate', 'fnlSucsfRt', 'bidprcRt', '낙찰률'])),
   };
 }
 

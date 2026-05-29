@@ -22,6 +22,30 @@ test('marks award confirmed when only award fields exist', () => {
   expect(rows.award).toHaveLength(1);
 });
 
+test('recognizes successful bid service aliases used by legacy award normalizer', () => {
+  const rows = buildReportRows({
+    keyword: 'ees',
+    record: { 입찰공고번호: 'R26 - 000' },
+    bidKey: { bidNtceNo: 'R26', bidNtceOrd: '000', normalized: 'R26-000' },
+    enrichment: {
+      status: '확인',
+      items: [{
+        fnlSucsfCorpNm: '최종낙찰사',
+        fnlSucsfAmt: '1000',
+        fnlSucsfRt: '88.123',
+      }],
+    },
+  });
+  expect(rows.integrated).toMatchObject({
+    리포트상태: '낙찰 확인',
+    낙찰업체: '최종낙찰사',
+    낙찰금액: '1000',
+    낙찰률: '88.123',
+  });
+  expect(rows.award).toHaveLength(1);
+  expect(rows.award[0]).toMatchObject({ 낙찰업체: '최종낙찰사', 낙찰금액: '1000' });
+});
+
 test('builds detail rows from every enrichment item while summary uses first item', () => {
   const rows = buildReportRows({
     keyword: 'ees',
