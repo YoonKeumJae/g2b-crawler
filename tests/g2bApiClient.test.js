@@ -77,6 +77,38 @@ test('follows pagination until all rows are returned', async () => {
   expect(new URL(global.fetch.mock.calls[1][0]).searchParams.get('pageNo')).toBe('2');
 });
 
+test('retries retryable failures before returning a successful response', async () => {
+  global.fetch = jest.fn()
+    .mockResolvedValueOnce({ ok: false, status: 503, statusText: 'Service Unavailable' })
+    .mockRejectedValueOnce(new Error('temporary network failure'))
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        response: {
+          header: { resultCode: '00' },
+          body: { items: [{ item: { bidNtceNo: 'R26' } }] },
+        },
+      }),
+    });
+
+  const client = new G2BApiClient({ serviceKey: 'key', retries: 2 });
+  const result = await client.getJson('https://example.test/api', {});
+
+  expect(result.ok).toBe(true);
+  expect(result.items).toEqual([{ bidNtceNo: 'R26' }]);
+  expect(global.fetch).toHaveBeenCalledTimes(3);
+});
+
+test('stops retrying retryable failures after the configured limit', async () => {
+  global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 502, statusText: 'Bad Gateway' });
+
+  const client = new G2BApiClient({ serviceKey: 'key', retries: 1 });
+  const result = await client.getJson('https://example.test/api', {});
+
+  expect(result).toMatchObject({ ok: false, code: 'HTTP_502' });
+  expect(global.fetch).toHaveBeenCalledTimes(2);
+});
+
 test('normalizes an already encoded service key before URL encoding', async () => {
   global.fetch = jest.fn().mockResolvedValue({
     ok: true,
