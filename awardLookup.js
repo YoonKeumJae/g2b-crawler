@@ -1,6 +1,19 @@
-const { classifyAwardStatus, inferBusinessType, inferOpeningDate, lookupAwardViaOpenApi } = require('./award');
+const {
+  classifyAwardStatus,
+  inferBusinessType,
+  inferOpeningDate,
+  lookupAwardViaOpenApi,
+  normalizeSuccessfulBid,
+} = require('./award');
 
-async function lookupAwardForResultStore({ apiEnabled = true, apiKey, bidNumber, record, lookup = lookupAwardViaOpenApi }) {
+async function lookupAwardForResultStore({
+  apiEnabled = true,
+  apiKey,
+  bidNumber,
+  record,
+  enrichment,
+  lookup = lookupAwardViaOpenApi,
+}) {
   if (!apiEnabled) {
     return {
       source: 'data.go.kr',
@@ -17,6 +30,12 @@ async function lookupAwardForResultStore({ apiEnabled = true, apiKey, bidNumber,
       classification: 'not_found',
       error: 'bidNumber is missing',
     };
+  }
+
+  const enrichedAward = awardFromEnrichment(enrichment);
+  if (enrichedAward) {
+    enrichedAward.classification = classifyAwardStatus({ award: enrichedAward, detailFields: record });
+    return enrichedAward;
   }
 
   let award;
@@ -38,4 +57,17 @@ async function lookupAwardForResultStore({ apiEnabled = true, apiKey, bidNumber,
   return award;
 }
 
-module.exports = { lookupAwardForResultStore };
+function awardFromEnrichment(enrichment) {
+  if (enrichment?.status !== '확인' || enrichment?.source !== '낙찰정보') return null;
+
+  for (const item of enrichment.items || []) {
+    const award = normalizeSuccessfulBid({
+      bsnsDivNm: enrichment.workType,
+      ...item,
+    });
+    if (award.winnerName || award.awardAmount) return award;
+  }
+  return null;
+}
+
+module.exports = { lookupAwardForResultStore, awardFromEnrichment };

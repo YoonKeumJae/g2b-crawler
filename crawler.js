@@ -151,6 +151,7 @@ const { lookupAwardForResultStore } = require('./awardLookup');
                 apiKey: config.dataGoKrApiKey,
                 bidNumber,
                 record,
+                enrichment,
               });
 
               resultStore.upsertBid({
