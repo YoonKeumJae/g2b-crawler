@@ -11,6 +11,7 @@ beforeEach(() => {
 
 afterEach(() => {
   delete process.env.DATA_GO_KR_SERVICE_KEY;
+  delete process.env.OTHER_VALUE;
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 

@@ -147,6 +147,7 @@ const { lookupAwardForResultStore } = require('./awardLookup');
               reportRows.errors.forEach((error) => writer.addErrorLog(error));
 
               const award = await lookupAwardForResultStore({
+                apiEnabled: config.apiEnabled,
                 apiKey: config.dataGoKrApiKey,
                 bidNumber,
                 record,
