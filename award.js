@@ -1,4 +1,4 @@
-const OPEN_API_BASE_URL = 'http://apis.data.go.kr/1230000/as/ScsbidInfoService';
+const OPEN_API_BASE_URL = 'https://apis.data.go.kr/1230000/as/ScsbidInfoService';
 const AWARD_ENDPOINTS = {
   물품: 'getScsbidListSttusThng',
   공사: 'getScsbidListSttusCnstwk',

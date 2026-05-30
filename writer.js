@@ -7,8 +7,15 @@
 const ExcelJS = require('exceljs');
 const path = require('path');
 const fs = require('fs');
+const {
+  INTEGRATED_HEADERS,
+  AWARD_HEADERS,
+  CONTRACT_HEADERS,
+  ERROR_HEADERS,
+} = require('./reportRows');
 
 const TEMPLATE_PATH = path.join(__dirname, 'template.xlsx');
+const FIXED_SHEET_NAMES = ['통합리포트', '낙찰정보', '계약정보', '오류로그', 'Summary', 'Attachments', 'Awards', 'Vendor Summary'];
 
 function fmtDate(yyyymmdd) {
   return `${yyyymmdd.slice(0, 4)}/${yyyymmdd.slice(4, 6)}/${yyyymmdd.slice(6, 8)}`;
@@ -20,6 +27,8 @@ class ExcelWriter {
     this.templateSheet = null;
     this.columnMap = {};  // header text → column index (1-based)
     this.sheets = {};     // keyword → { sheet, nextRow }
+    this.extraSheets = {};
+    this.usedSheetNames = new Set(FIXED_SHEET_NAMES);
     this.outputPath = null;
   }
 
@@ -32,8 +41,8 @@ class ExcelWriter {
     // Build column map from header row (row 3), normalized (strip spaces) for matching
     this.templateSheet.getRow(3).eachCell({ includeEmpty: false }, (cell, colNum) => {
       if (cell.value) {
-        this.columnMap[cell.value] = colNum;                          // exact
-        this.columnMap[cell.value.replace(/\s+/g, '')] = colNum;     // normalized
+        this.columnMap[cell.value] = colNum;                        // exact
+        this.columnMap[cell.value.replace(/\s+/g, '')] = colNum;    // normalized
       }
     });
   }
@@ -41,7 +50,7 @@ class ExcelWriter {
   _getOrCreateSheet(keyword, dateRange) {
     if (this.sheets[keyword]) return this.sheets[keyword];
 
-    const sheetName = String(keyword).slice(0, 31);
+    const sheetName = this._uniqueSheetName(keyword);
     const sheet = this.workbook.addWorksheet(sheetName);
 
     // Copy column widths
@@ -49,7 +58,7 @@ class ExcelWriter {
       if (col.width) sheet.getColumn(i + 1).width = col.width;
     });
 
-    // Clone rows 1–3 (meta row + blank row + header row)
+    // Clone rows 1-3 (meta row + blank row + header row)
     for (let r = 1; r <= 3; r++) {
       const srcRow = this.templateSheet.getRow(r);
       const dstRow = sheet.getRow(r);
@@ -64,7 +73,6 @@ class ExcelWriter {
       dstRow.commit();
     }
 
-    // Write date range into B1
     sheet.getCell('B1').value =
       `${fmtDate(dateRange.from)} ~ ${fmtDate(dateRange.to)}`;
 
@@ -87,6 +95,48 @@ class ExcelWriter {
     }
     row.commit();
     info.nextRow++;
+  }
+
+  addIntegratedRecord(record) {
+    this._addFixedRecord('통합리포트', INTEGRATED_HEADERS, record);
+  }
+
+  addAwardRecord(record) {
+    this._addFixedRecord('낙찰정보', AWARD_HEADERS, record);
+  }
+
+  addContractRecord(record) {
+    this._addFixedRecord('계약정보', CONTRACT_HEADERS, record);
+  }
+
+  addErrorLog(record) {
+    this._addFixedRecord('오류로그', ERROR_HEADERS, record);
+  }
+
+  _addFixedRecord(sheetName, headers, record) {
+    const info = this._getOrCreateFixedSheet(sheetName, headers);
+    const row = info.sheet.getRow(info.nextRow);
+    headers.forEach((header, index) => {
+      row.getCell(index + 1).value = record[header] === undefined || record[header] === null
+        ? ''
+        : String(record[header]);
+    });
+    row.commit();
+    info.nextRow++;
+  }
+
+  _getOrCreateFixedSheet(sheetName, headers) {
+    if (this.extraSheets[sheetName]) return this.extraSheets[sheetName];
+    const sheet = this._replaceSheet(sheetName);
+    headers.forEach((header, index) => {
+      const cell = sheet.getCell(1, index + 1);
+      cell.value = header;
+      cell.font = { bold: true };
+    });
+    sheet.views = [{ state: 'frozen', ySplit: 1 }];
+    this.extraSheets[sheetName] = { sheet, nextRow: 2 };
+    this.usedSheetNames.add(sheetName);
+    return this.extraSheets[sheetName];
   }
 
   addAnalysisSheets(resultData) {
@@ -201,6 +251,8 @@ class ExcelWriter {
   _replaceSheet(name) {
     const existing = this.workbook.getWorksheet(name);
     if (existing) this.workbook.removeWorksheet(existing.id);
+    this.extraSheets[name] = undefined;
+    this.usedSheetNames.add(name);
     return this.workbook.addWorksheet(name);
   }
 
@@ -217,9 +269,21 @@ class ExcelWriter {
     });
   }
 
+  _uniqueSheetName(rawName) {
+    const base = String(rawName || 'Sheet').slice(0, 31);
+    let name = base;
+    let index = 1;
+    while (this.usedSheetNames.has(name) || this.workbook.getWorksheet(name)) {
+      const suffix = `_${index}`;
+      name = base.slice(0, 31 - suffix.length) + suffix;
+      index++;
+    }
+    this.usedSheetNames.add(name);
+    return name;
+  }
+
   async save() {
-    // Remove original template sheet (Sheet1) since we created keyword sheets
-    if (Object.keys(this.sheets).length > 0) {
+    if (this.templateSheet && this.workbook.getWorksheet(this.templateSheet.id)) {
       this.workbook.removeWorksheet(this.templateSheet.id);
     }
 

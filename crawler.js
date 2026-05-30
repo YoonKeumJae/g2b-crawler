@@ -4,13 +4,30 @@ const { search } = require('./search');
 const { collectCurrentPageRows, goToNextPage } = require('./paginator');
 const { extractDetail } = require('./detail');
 const { ExcelWriter } = require('./writer');
+const { resolveBidKey } = require('./bidKeyResolver');
+const { G2BApiClient } = require('./g2bApiClient');
+const { lookupEnrichmentByBidNumber } = require('./enrichment');
+const { buildReportRows } = require('./reportRows');
 const { ResultStore } = require('./resultStore');
 const { restoreSearchResultsPage } = require('./searchRestore');
-const { classifyAwardStatus, inferBusinessType, inferOpeningDate, lookupAwardViaOpenApi, normalizeBidNumber } = require('./award');
+const { normalizeBidNumber } = require('./award');
+const { lookupAwardForResultStore } = require('./awardLookup');
 
 (async () => {
   const dateRange = config.getDateRange();
   const keywords = config.keywords;
+
+  if (config.apiEnabled && !config.serviceKey) {
+    console.error('DATA_GO_KR_SERVICE_KEY is required for award/contract enrichment');
+    process.exitCode = 1;
+    return;
+  }
+
+  const apiClient = new G2BApiClient({
+    serviceKey: config.serviceKey,
+    timeoutMs: config.apiTimeoutMs,
+    retries: config.apiRetries,
+  });
 
   const browser = await chromium.launch({
     headless: config.headless,
@@ -35,6 +52,9 @@ const { classifyAwardStatus, inferBusinessType, inferOpeningDate, lookupAwardVia
 
   let totalAttempted = 0;
   let totalSaved = 0;
+  let apiSuccessCount = 0;
+  let apiNoResultCount = 0;
+  let apiErrorCount = 0;
 
   try {
     for (const keyword of keywords) {
@@ -66,36 +86,92 @@ const { classifyAwardStatus, inferBusinessType, inferOpeningDate, lookupAwardVia
                 attachmentDir: config.attachmentDir,
                 expectedBidNumber: row.bidNumber,
               });
-              if (record) {
-                const downloadedAttachments = record.__attachments || [];
-                delete record.__attachments;
-
-                const bidNumber = normalizeBidNumber(record.입찰공고번호 || record.공고번호 || row.bidNumber);
-                const award = await lookupAwardViaOpenApi({
-                  apiKey: config.dataGoKrApiKey,
-                  bidNumber,
-                  businessType: inferBusinessType(record),
-                  openingDate: inferOpeningDate(record),
-                });
-                award.classification = classifyAwardStatus({ award, detailFields: record });
-
-                writer.addRecord(keyword, dateRange, record);
-                resultStore.upsertBid({
-                  keyword,
-                  bidNumber,
-                  title: record.공고명 || '',
-                  detailFields: record,
-                  attachments: downloadedAttachments,
-                  award,
-                });
-                resultStore.save();
-                totalSaved++;
-              } else {
+              if (!record) {
                 console.log(`  ⚠ Failed to extract details for row ${row.rowIndex}`);
+                writer.addErrorLog({
+                  검색키워드: keyword,
+                  입찰공고번호: row.bidNumber || '',
+                  단계: '상세 추출',
+                  오류코드: 'DETAIL_EMPTY',
+                  오류메시지: `Failed to extract details for row ${row.rowIndex}`,
+                });
                 await restoreSearchResultsPage({ page, keyword, dateRange, pageNum });
+                continue;
               }
+
+              const downloadedAttachments = record.__attachments || [];
+              delete record.__attachments;
+
+              writer.addRecord(keyword, dateRange, record);
+
+              const bidNumber = normalizeBidNumber(record.입찰공고번호 || record.공고번호 || row.bidNumber);
+              const bidKey = resolveBidKey({
+                rawBidNumber: record.입찰공고번호,
+                normalizedBidNumber: bidNumber,
+                rowBidNumber: row.bidNumber,
+              });
+              let enrichment = null;
+
+              if (!bidKey) {
+                writer.addErrorLog({
+                  검색키워드: keyword,
+                  입찰공고번호: record.입찰공고번호 || row.bidNumber || '',
+                  단계: '공고번호 정규화',
+                  오류코드: 'INVALID_BID_NUMBER',
+                  오류메시지: '입찰공고번호 형식이 비어 있거나 불완전합니다.',
+                });
+              } else if (config.apiEnabled) {
+                try {
+                  enrichment = await lookupEnrichmentByBidNumber(apiClient, bidKey);
+                  if (enrichment.status === '확인') apiSuccessCount++;
+                  else if (enrichment.status === '정보 없음') apiNoResultCount++;
+                  else apiErrorCount++;
+                } catch (apiErr) {
+                  apiErrorCount++;
+                  enrichment = {
+                    status: 'API 조회 실패',
+                    items: [],
+                    errors: [{
+                      stage: '계약/낙찰 API 보강',
+                      code: 'UNEXPECTED_ERROR',
+                      message: apiErr.message,
+                    }],
+                  };
+                }
+              }
+
+              const reportRows = buildReportRows({ keyword, record, bidKey, enrichment });
+              writer.addIntegratedRecord(reportRows.integrated);
+              reportRows.award.forEach((award) => writer.addAwardRecord(award));
+              reportRows.contract.forEach((contract) => writer.addContractRecord(contract));
+              reportRows.errors.forEach((error) => writer.addErrorLog(error));
+
+              const award = await lookupAwardForResultStore({
+                apiEnabled: config.apiEnabled,
+                apiKey: config.dataGoKrApiKey,
+                bidNumber,
+                record,
+              });
+
+              resultStore.upsertBid({
+                keyword,
+                bidNumber,
+                title: record.공고명 || '',
+                detailFields: record,
+                attachments: downloadedAttachments,
+                award,
+              });
+              resultStore.save();
+              totalSaved++;
             } catch (rowErr) {
               console.log(`  ⚠ Skipped row ${row.rowIndex}: ${rowErr.message.slice(0, 80)}`);
+              writer.addErrorLog({
+                검색키워드: keyword,
+                입찰공고번호: row.bidNumber || '',
+                단계: '행 처리',
+                오류코드: 'ROW_ERROR',
+                오류메시지: rowErr.message,
+              });
               await restoreSearchResultsPage({ page, keyword, dateRange, pageNum });
             }
           }
@@ -114,6 +190,7 @@ const { classifyAwardStatus, inferBusinessType, inferOpeningDate, lookupAwardVia
     resultStore.save();
     if (totalSaved > 0) {
       console.log(`Total: ${totalSaved} saved records (${totalAttempted} attempted) across ${keywords.length} keyword(s).`);
+      console.log(`API: success=${apiSuccessCount}, noResult=${apiNoResultCount}, error=${apiErrorCount}`);
     } else {
       console.log('No records found. Empty sheets saved.');
     }

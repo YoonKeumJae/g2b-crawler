@@ -50,6 +50,7 @@ test('normalizes current successful bid service winner fields', () => {
 
 test('lookupAwardViaOpenApi returns the matching award from data.go.kr response', async () => {
   const fetchImpl = jest.fn(async (url) => {
+    expect(url.protocol).toBe('https:');
     expect(url.toString()).toContain('getScsbidListSttusThng');
     expect(url.searchParams.get('bidNtceNo')).toBe('R26BK00000001');
     expect(url.searchParams.get('inqryDiv')).toBe('4');
